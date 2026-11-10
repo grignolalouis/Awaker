@@ -7,8 +7,9 @@ import SwiftUI
 struct BackdropScene: Identifiable, Equatable {
     let id: String
     let title: String
-    /// How much black is laid over the picture so the characters and the white text stand out. Bright scenes need more.
-    var dim = 0.2
+    /// How much black is laid over the picture so the characters, drawn in the picture's own colours,
+    /// stand out against it, and the white text stays readable. Bright scenes need more.
+    var dim = 0.5
 }
 
 /// The pictures behind the whole window. The user picks one in Settings.
@@ -16,9 +17,9 @@ struct BackdropScene: Identifiable, Equatable {
 enum Backdrop {
     static let scenes = [
         BackdropScene(id: "backdrop", title: "Meadow"),
-        BackdropScene(id: "beach", title: "Beach", dim: 0.32),
-        BackdropScene(id: "sunflowers", title: "Sunflowers", dim: 0.32),
-        BackdropScene(id: "wheat", title: "Wheat field", dim: 0.32),
+        BackdropScene(id: "beach", title: "Beach", dim: 0.58),
+        BackdropScene(id: "sunflowers", title: "Sunflowers", dim: 0.58),
+        BackdropScene(id: "wheat", title: "Wheat field", dim: 0.58),
     ]
 
     /// The scene with this id, or the first one when the id is unknown (a scene removed by an update).

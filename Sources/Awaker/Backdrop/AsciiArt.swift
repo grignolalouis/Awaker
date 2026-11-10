@@ -142,12 +142,14 @@ final class AsciiArtist {
     /// Characters take the color of the pixels under them, with more saturation and a little more light
     /// so they read as vivid ink on the dimmed image. No whitening: that is what washes the picture out.
     private let saturation: CGFloat = 1.8
-    private let brightness: CGFloat = 1.3
-    private let baseOpacity: CGFloat = 0.85
-    private let opacityRange: CGFloat = 0.15
+    private let brightness: CGFloat = 1.55
+    /// Fully opaque: the characters are the picture, the image behind only fills the gaps between them.
+    private let baseOpacity: CGFloat = 1
+    private let opacityRange: CGFloat = 0
 
-    init(cell: CGSize = CGSize(width: 4, height: 7),
-         font: NSFont = .monospacedSystemFont(ofSize: 6, weight: .bold)) {
+    /// Cells large enough for each character to be read as a character, not as a grain.
+    init(cell: CGSize = CGSize(width: 5, height: 9),
+         font: NSFont = .monospacedSystemFont(ofSize: 7.5, weight: .heavy)) {
         glyphs = GlyphSet(cell: cell, font: font)
     }
 
