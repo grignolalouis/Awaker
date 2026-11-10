@@ -45,13 +45,7 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Picker("Screen", selection: $screen) {
-                    ForEach(Screen.allCases) { screen in
-                        Label(screen.title, systemImage: screen.symbol).tag(screen)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelStyle(.titleAndIcon)
+                ScreenPicker(screen: $screen)
             }
         }
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
@@ -65,5 +59,44 @@ struct ContentView: View {
         }
         .onDisappear { NSApp.setActivationPolicy(.accessory) }
         .task { await SnapshotRunner.run { screen = $0 } }
+    }
+}
+
+/// The screens as a segmented control with an icon and a title on each segment.
+/// SwiftUI's segmented `Picker` drops the icons on macOS, so this is AppKit's own control, as it is.
+private struct ScreenPicker: NSViewRepresentable {
+    @Binding var screen: Screen
+
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let control = NSSegmentedControl()
+        control.trackingMode = .selectOne
+        control.controlSize = .large
+        control.segmentCount = Screen.allCases.count
+        for (index, screen) in Screen.allCases.enumerated() {
+            control.setLabel(screen.title, forSegment: index)
+            control.setImage(NSImage(systemSymbolName: screen.symbol, accessibilityDescription: nil), forSegment: index)
+            control.setImageScaling(.scaleProportionallyDown, forSegment: index)
+        }
+        control.target = context.coordinator
+        control.action = #selector(Coordinator.select(_:))
+        control.setAccessibilityLabel("Screen")
+        return control
+    }
+
+    func updateNSView(_ control: NSSegmentedControl, context: Context) {
+        context.coordinator.select = { screen = $0 }
+        control.selectedSegment = Screen.allCases.firstIndex(of: screen) ?? 0
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        var select: (Screen) -> Void = { _ in }
+
+        @objc func select(_ control: NSSegmentedControl) {
+            guard Screen.allCases.indices.contains(control.selectedSegment) else { return }
+            select(Screen.allCases[control.selectedSegment])
+        }
     }
 }
