@@ -150,8 +150,8 @@ final class AsciiArtist {
 
     /// Cells large enough for each character to be read as a character, not as a grain.
     /// Whole points, so cells land on whole pixels at any display scale.
-    init(cell: CGSize = CGSize(width: 4, height: 8),
-         font: NSFont = .monospacedSystemFont(ofSize: 6.5, weight: .heavy)) {
+    init(cell: CGSize = CGSize(width: 3, height: 6),
+         font: NSFont = .monospacedSystemFont(ofSize: 5, weight: .heavy)) {
         glyphs = GlyphSet(cell: cell, font: font)
     }
 
