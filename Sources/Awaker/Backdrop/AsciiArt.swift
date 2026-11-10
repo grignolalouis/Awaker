@@ -139,10 +139,11 @@ final class AsciiArtist {
     private let toneWeight: Float = 3
     /// A character from the previous frame is kept unless a new one beats it by this margin.
     private let keepMargin: Float = 1.12
-    /// Characters take the color of the pixels under them, with more saturation and a little more light
-    /// so they read as vivid ink on the dimmed image. No whitening: that is what washes the picture out.
-    private let saturation: CGFloat = 1.8
-    private let brightness: CGFloat = 1.55
+    /// Characters take the color of the pixels under them, a touch more saturated and lighter so they read
+    /// as ink on the dimmed image. Kept gentle: the generated scenes are vivid already, and a strong boost
+    /// turned them garish. No whitening: that is what washes the picture out.
+    private let saturation: CGFloat = 1.1
+    private let brightness: CGFloat = 1.3
     /// Fully opaque: the characters are the picture, the image behind only fills the gaps between them.
     private let baseOpacity: CGFloat = 1
     private let opacityRange: CGFloat = 0
