@@ -154,9 +154,10 @@ final class AsciiArtist {
     private let toneWeight: Float = 3
     /// A character from the previous frame is kept unless a new one beats it by this margin.
     private let keepMargin: Float = 1.12
-    /// Characters take the color of the pixels under them, as it is (1 leaves saturation alone; the owner
-    /// tried 1.8, too loud, and 0.6, too dull), a little lighter so they read as ink on the dimmed image.
-    private let saturation: CGFloat = 1
+    /// Characters take the color of the pixels under them, slightly less saturated (below 1 pulls a color
+    /// toward its own gray) and a little lighter, so they read as ink on the dimmed image.
+    /// Tuned with the owner: 1.8 was garish, 0.6 dull, 0.8 a bit flat, 1 a bit much.
+    private let saturation: CGFloat = 0.9
     private let brightness: CGFloat = 1.3
 
     /// Cells large enough for each character to be read as a character, not as a grain.

@@ -75,11 +75,12 @@ struct MenuBarLabel: View {
     /// The icon, a green dot while the Mac is kept awake, and how many agents wait for you.
     @ViewBuilder private var label: some View {
         let icon = Image(nsImage: awake.isActive ? Brand.menuBarActive : Brand.menuBarInactive)
-        let waiting = monitor.waitingCount > 0 ? " ✋\(monitor.waitingCount)" : ""
-        if awake.isActive {
-            Text("\(icon) \(Image(nsImage: Brand.activeDot))\(waiting)")
-        } else if !waiting.isEmpty {
-            Text("\(icon)\(waiting)")
+        if monitor.waitingCount > 0 {
+            // Side by side rather than inside one Text: a colored image placed in a Text vanished from the menu bar.
+            HStack(spacing: 4) {
+                icon
+                Text("✋\(monitor.waitingCount)")
+            }
         } else {
             icon
         }
