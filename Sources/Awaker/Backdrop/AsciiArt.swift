@@ -149,8 +149,9 @@ final class AsciiArtist {
     private let opacityRange: CGFloat = 0
 
     /// Cells large enough for each character to be read as a character, not as a grain.
-    init(cell: CGSize = CGSize(width: 5, height: 9),
-         font: NSFont = .monospacedSystemFont(ofSize: 7.5, weight: .heavy)) {
+    /// Whole points, so cells land on whole pixels at any display scale.
+    init(cell: CGSize = CGSize(width: 4, height: 8),
+         font: NSFont = .monospacedSystemFont(ofSize: 6.5, weight: .heavy)) {
         glyphs = GlyphSet(cell: cell, font: font)
     }
 
