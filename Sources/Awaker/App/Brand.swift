@@ -6,6 +6,19 @@ enum Brand {
     static let menuBarActive = menuBarImage(active: true)
     static let menuBarInactive = menuBarImage(active: false)
 
+    /// A green dot shown next to the mark while a session runs. Not a template: it keeps its color in the menu bar.
+    static let activeDot: NSImage = {
+        let diameter: CGFloat = 7
+        let image = NSImage(size: NSSize(width: diameter, height: diameter), flipped: false) { rect in
+            NSColor.systemGreen.setFill()
+            NSBezierPath(ovalIn: rect).fill()
+            return true
+        }
+        image.isTemplate = false
+        image.accessibilityDescription = "Active"
+        return image
+    }()
+
     private static let mark: NSImage? = Bundle.main.url(forResource: "logo-mark", withExtension: "svg")
         .flatMap(NSImage.init(contentsOf:))
 

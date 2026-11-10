@@ -72,13 +72,14 @@ struct MenuBarLabel: View {
         label.onAppear { WindowOpener.shared.register(openWindow) }
     }
 
-    /// The icon, then what matters most: how many agents wait for you, else the session's duration.
+    /// The icon, a green dot while the Mac is kept awake, and how many agents wait for you.
     @ViewBuilder private var label: some View {
         let icon = Image(nsImage: awake.isActive ? Brand.menuBarActive : Brand.menuBarInactive)
-        if monitor.waitingCount > 0 {
-            Text("\(icon) ✋\(monitor.waitingCount)")
-        } else if settings.showElapsedInMenuBar, let start = awake.startedAt {
-            Text("\(icon) \(Format.clock(awake.now.timeIntervalSince(start)))")
+        let waiting = monitor.waitingCount > 0 ? " ✋\(monitor.waitingCount)" : ""
+        if awake.isActive {
+            Text("\(icon) \(Image(nsImage: Brand.activeDot))\(waiting)")
+        } else if !waiting.isEmpty {
+            Text("\(icon)\(waiting)")
         } else {
             icon
         }

@@ -17,7 +17,6 @@ final class AppSettings {
     var batteryThreshold: Int { didSet { defaults.set(batteryThreshold, forKey: Key.batteryThreshold) } }
     var acOnly: Bool { didSet { defaults.set(acOnly, forKey: Key.acOnly) } }
     var thermalGuard: Bool { didSet { defaults.set(thermalGuard, forKey: Key.thermalGuard) } }
-    var showElapsedInMenuBar: Bool { didSet { defaults.set(showElapsedInMenuBar, forKey: Key.showElapsed) } }
     var notifications: Bool { didSet { defaults.set(notifications, forKey: Key.notifications) } }
     /// Tell the user when a Claude Code session finishes or needs them.
     var agentNotifications: Bool { didSet { defaults.set(agentNotifications, forKey: Key.agentNotifications) } }
@@ -37,7 +36,6 @@ final class AppSettings {
         static let batteryThreshold = "batteryThreshold"
         static let acOnly = "acOnly"
         static let thermalGuard = "thermalGuard"
-        static let showElapsed = "showElapsed"
         static let notifications = "notifications"
         static let agentNotifications = "agentNotifications"
         static let hiddenSkins = "hiddenSkins"
@@ -53,7 +51,6 @@ final class AppSettings {
             Key.batteryThreshold: 15,
             Key.acOnly: false,
             Key.thermalGuard: true,
-            Key.showElapsed: false,
             Key.notifications: true,
             Key.agentNotifications: true,
         ])
@@ -63,7 +60,6 @@ final class AppSettings {
         batteryThreshold = defaults.integer(forKey: Key.batteryThreshold)
         acOnly = defaults.bool(forKey: Key.acOnly)
         thermalGuard = defaults.bool(forKey: Key.thermalGuard)
-        showElapsedInMenuBar = defaults.bool(forKey: Key.showElapsed)
         notifications = defaults.bool(forKey: Key.notifications)
         agentNotifications = defaults.bool(forKey: Key.agentNotifications)
         backdrop = defaults.string(forKey: Key.backdrop) ?? Backdrop.scenes[0].id

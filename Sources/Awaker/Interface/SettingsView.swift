@@ -146,7 +146,6 @@ struct SettingsView: View {
             }
 
             Section("System") {
-                Toggle("Show duration in the menu bar", isOn: $settings.showElapsedInMenuBar)
                 Toggle(isOn: $settings.notifications) {
                     Text("Session notifications")
                     Text("When auto mode starts a session, or a protection stops one.")
