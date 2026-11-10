@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 APP=build/Awaker.app
 CONTENTS=$APP/Contents
 
-echo "→ Compilation"
+echo "→ Compiling"
 swift build -c release --product Awaker
 BINARY=$(swift build -c release --show-bin-path)/Awaker
 
@@ -28,7 +28,7 @@ cp Assets/Backdrop/backdrop.jpg "$CONTENTS/Resources/Backdrop/"
 # Optional animated version of the backdrop (a short seamless loop).
 [[ -f Assets/Backdrop/backdrop.mp4 ]] && cp Assets/Backdrop/backdrop.mp4 "$CONTENTS/Resources/Backdrop/"
 
-echo "→ Icône"
+echo "→ Icon"
 swift Scripts/make-icon.swift Assets/logo-mark.svg build/AppIcon.iconset >/dev/null
 iconutil -c icns build/AppIcon.iconset -o "$CONTENTS/Resources/AppIcon.icns"
 rm -rf build/AppIcon.iconset
@@ -43,5 +43,5 @@ if [[ "${1:-}" == "--install" ]]; then
   rm -rf /Applications/Awaker.app
   cp -R "$APP" /Applications/
   open /Applications/Awaker.app
-  echo "✓ Installée : /Applications/Awaker.app"
+  echo "✓ Installed: /Applications/Awaker.app"
 fi

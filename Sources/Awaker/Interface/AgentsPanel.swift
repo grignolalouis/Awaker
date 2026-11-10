@@ -13,7 +13,7 @@ struct AgentsPanel: View {
     private let recentWindow: TimeInterval = 6 * 3_600
 
     var body: some View {
-        // The clock drives the "il y a 3 min" labels and the fold between recent and old agents.
+        // The clock drives the "3 min ago" labels and the fold between recent and old agents.
         TimelineView(.periodic(from: .now, by: 30)) { timeline in
             let (recent, older) = split(monitor.agents, now: timeline.date)
             GlassPanel {
@@ -38,13 +38,13 @@ struct AgentsPanel: View {
     private func footer(older: Int) -> some View {
         HStack {
             if older > 0 {
-                Text(Format.plural(older, "autre agent au repos", "autres agents au repos"))
+                Text(Format.plural(older, "other agent idle", "other agents idle"))
             }
             Spacer()
             if monitor.totalDollars > 0 {
                 Text("Total ≈ \(Format.dollars(monitor.totalDollars))")
                     .monospacedDigit()
-                    .help("Coût équivalent API des sessions ouvertes, au dernier relevé de Claude Code.")
+                    .help("API-equivalent cost of the open sessions, as last recorded by Claude Code.")
             }
         }
         .font(.callout)
@@ -71,7 +71,7 @@ private struct AgentRow: View {
                 summary.contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityHint(isExpanded ? "Replier" : "Afficher le détail")
+            .accessibilityHint(isExpanded ? "Collapse" : "Show details")
             if isExpanded {
                 detail
                     .padding(.leading, avatarColumn)
@@ -92,7 +92,7 @@ private struct AgentRow: View {
                     .foregroundStyle(.secondary)
                 // While something is going on, say what was asked.
                 if !isExpanded, agent.state.isActive, let prompt = agent.details.lastPrompt {
-                    Text("« \(prompt) »")
+                    Text("“\(prompt)”")
                         .font(.callout)
                         .foregroundStyle(.tertiary)
                 }
@@ -114,24 +114,24 @@ private struct AgentRow: View {
     private var detail: some View {
         VStack(alignment: .leading, spacing: 10) {
             if agent.state.needsUser {
-                DetailLine(label: "Il demande", text: agent.requestDescription, lines: 3)
+                DetailLine(label: "Asking", text: agent.requestDescription, lines: 3)
             }
             if let prompt = agent.details.lastPrompt {
-                DetailLine(label: "Ta demande", text: prompt, lines: 3)
+                DetailLine(label: "Your request", text: prompt, lines: 3)
             }
             if let reply = agent.details.lastReply ?? agent.details.summary {
-                DetailLine(label: "Sa réponse", text: reply, lines: 4)
+                DetailLine(label: "Its reply", text: reply, lines: 4)
             }
             if let cost = agent.details.cost {
-                Text("≈ \(Format.dollars(cost.dollars)) · \(Format.duration(cost.modelTime)) de calcul · +\(cost.linesAdded) −\(cost.linesRemoved) lignes")
+                Text("≈ \(Format.dollars(cost.dollars)) · \(Format.duration(cost.modelTime)) of compute · +\(cost.linesAdded) −\(cost.linesRemoved) lines")
                     .font(.callout)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
-                    .help("Coût équivalent API, au dernier relevé de Claude Code. Sur un abonnement, ce n'est pas ce que tu paies.")
+                    .help("API-equivalent cost, as last recorded by Claude Code. On a subscription, this is not what you pay.")
             }
             HStack(spacing: 8) {
-                Button("Aller au terminal", systemImage: "terminal") { AgentJumper.jump(to: agent) }
-                Button("Ouvrir le dossier", systemImage: "folder") { NSWorkspace.shared.open(agent.directory) }
+                Button("Go to Terminal", systemImage: "terminal") { AgentJumper.jump(to: agent) }
+                Button("Open Folder", systemImage: "folder") { NSWorkspace.shared.open(agent.directory) }
             }
             .buttonStyle(.glass)
             .controlSize(.small)
@@ -158,10 +158,10 @@ private struct AgentRow: View {
         }
     }
 
-    /// "depuis 3 min" while something is going on, "il y a 3 min" once it is over.
+    /// "for 3 min" while something is going on, "3 min ago" once it is over.
     private var elapsed: String {
         let duration = Format.duration(now.timeIntervalSince(agent.stateSince))
-        return agent.state.isActive ? "depuis \(duration)" : "il y a \(duration)"
+        return agent.state.isActive ? "for \(duration)" : "\(duration) ago"
     }
 }
 
@@ -193,9 +193,9 @@ struct RecapBanner: View {
         HStack(spacing: 10) {
             Image(systemName: "moon.zzz.fill")
                 .foregroundStyle(.secondary)
-            Text("Pendant ton absence (\(Format.duration(recap.duration))) : \(recap.sentence)")
+            Text("While you were away (\(Format.duration(recap.duration))): \(recap.sentence)")
                 .lineLimit(2)
-            Button("Fermer", systemImage: "xmark", action: dismiss)
+            Button("Dismiss", systemImage: "xmark", action: dismiss)
                 .labelStyle(.iconOnly)
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)

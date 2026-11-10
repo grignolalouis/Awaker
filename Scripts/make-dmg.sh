@@ -14,7 +14,7 @@ rm -rf "$STAGING" "$DMG"
 mkdir -p "$STAGING"
 cp -R build/Awaker.app "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
-cp Resources/Lisez-moi.txt "$STAGING/"
+cp Resources/Read-me.txt "$STAGING/"
 
 hdiutil create -volname "Awaker" -srcfolder "$STAGING" -ov -format UDZO "$DMG" >/dev/null
 rm -rf "$STAGING"

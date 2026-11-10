@@ -164,7 +164,7 @@ final class AgentMonitor {
                let recap = AwayRecap(agents: agents, leftAt: absence.since, now: now) {
                 self.recap = recap
                 if settings.agentNotifications {
-                    Notifier.post("Pendant ton absence (\(Format.duration(recap.duration)))", recap.sentence)
+                    Notifier.post("While you were away (\(Format.duration(recap.duration)))", recap.sentence)
                 }
             } else {
                 // Too short for a recap: tell what changed meanwhile, as if the user had been there.

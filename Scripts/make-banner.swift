@@ -15,13 +15,13 @@ NSColor.white.setFill()
 NSRect(origin: .zero, size: size).fill()
 
 let name = NSAttributedString(string: "Awaker", attributes: [
-    .font: NSFont.systemFont(ofSize: 112, weight: .medium),
+    .font: NSFont.systemFont(ofSize: 112, weight: .regular),
     .foregroundColor: NSColor.black,
     .kern: -2,
 ])
-let markHeight: CGFloat = 132
+let markHeight: CGFloat = 156
 let markSize = NSSize(width: markHeight * mark.size.width / mark.size.height, height: markHeight)
-let gap: CGFloat = 36
+let gap: CGFloat = 60
 let textSize = name.size()
 let originX = (size.width - (markSize.width + gap + textSize.width)) / 2
 

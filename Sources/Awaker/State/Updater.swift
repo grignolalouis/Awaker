@@ -68,7 +68,7 @@ final class Updater {
             let page = URL(string: "https://github.com/\(Self.repository)/releases/latest")!
             let (_, response) = try await URLSession.shared.data(from: page)
             guard (response as? HTTPURLResponse)?.statusCode == 200, let landed = response.url else {
-                throw UpdateError("GitHub n'a pas répondu comme prévu.")
+                throw UpdateError("GitHub didn't answer as expected.")
             }
             // No tag in the final address: the repository has no release yet.
             guard let release = AppRelease(latestReleasePage: landed, repository: Self.repository),
@@ -79,14 +79,14 @@ final class Updater {
             status = .available(release)
             if announce && !announced.contains(release.version) {
                 announced.insert(release.version)
-                Notifier.post("Awaker \(release.version) est disponible", "Ouvre les Réglages d'Awaker pour l'installer.")
+                Notifier.post("Awaker \(release.version) is available", "Open Awaker's Settings to install it.")
             }
         } catch {
             // A failed check must not hide a release found earlier, nor pass for "up to date".
             if case .available = previous {
                 status = previous
             } else {
-                status = .failed("Vérification impossible : \(error.localizedDescription)")
+                status = .failed("Couldn't check for updates: \(error.localizedDescription)")
             }
         }
     }
@@ -131,7 +131,7 @@ final class Updater {
                 try Self.run("/usr/bin/ditto", [mount.appendingPathComponent("Awaker.app").path, staged.path])
             }.value
             guard Bundle(url: staged)?.bundleIdentifier == Bundle.main.bundleIdentifier else {
-                throw UpdateError("Le fichier téléchargé n'est pas Awaker.")
+                throw UpdateError("The downloaded file isn't Awaker.")
             }
             return staged
         } catch {
@@ -146,7 +146,7 @@ final class Updater {
         let destination = Bundle.main.bundleURL
         guard FileManager.default.isWritableFile(atPath: destination.deletingLastPathComponent().path) else {
             try? FileManager.default.removeItem(at: staged.deletingLastPathComponent())
-            throw UpdateError("Awaker ne peut pas se remplacer ici. Déplace-le dans le dossier Applications.")
+            throw UpdateError("Awaker can't replace itself here. Move it to the Applications folder.")
         }
         // $1: installed app, $2: new app, $3: staging folder to clean up.
         let script = """
@@ -165,7 +165,7 @@ final class Updater {
 
     private nonisolated static func run(_ executable: String, _ arguments: [String]) throws {
         guard Shell.run(executable, arguments).succeeded else {
-            throw UpdateError("L'installation a échoué (\(URL(fileURLWithPath: executable).lastPathComponent)).")
+            throw UpdateError("The installation failed (\(URL(fileURLWithPath: executable).lastPathComponent)).")
         }
     }
 }

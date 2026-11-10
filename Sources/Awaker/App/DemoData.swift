@@ -12,18 +12,18 @@ enum DemoData {
         }
         return [
             agent("a", "nexus", .waiting(tool: "Bash"), secondsAgo: 70, AgentDetails(
-                title: "Migration des webhooks Stripe", lastPrompt: "pousse la branche et ouvre la PR",
-                lastReply: "Les tests passent. Je pousse la branche.", pendingAction: "git push origin feat/stripe-webhooks",
+                title: "Stripe webhooks migration", lastPrompt: "push the branch and open the PR",
+                lastReply: "Tests pass. Pushing the branch.", pendingAction: "git push origin feat/stripe-webhooks",
                 cost: AgentCost(dollars: 4.12, modelTime: 1_260, linesAdded: 212, linesRemoved: 40))),
             agent("b", "dashboard", .working, secondsAgo: 260, AgentDetails(
-                title: "Refonte de l'écran Contacts", lastPrompt: "aligne le tableau sur la maquette et corrige le tri",
+                title: "Contacts screen redesign", lastPrompt: "align the table with the mockup and fix sorting",
                 cost: AgentCost(dollars: 11.8, modelTime: 3_900, linesAdded: 640, linesRemoved: 310))),
             agent("c", "dev", .finished, secondsAgo: 900, AgentDetails(
-                title: "Collecteur HubSpot seats et plan", lastPrompt: "relance la review",
-                lastReply: "La PR est verte et la review est redemandée.",
+                title: "HubSpot seats and plan collector", lastPrompt: "ask for the review again",
+                lastReply: "The PR is green and the review is requested again.",
                 cost: AgentCost(dollars: 26.49, modelTime: 3_631, linesAdded: 979, linesRemoved: 209))),
-            agent("d", "extension", .background, secondsAgo: 3_100, AgentDetails(title: "Tests de bout en bout")),
-            agent("e", "dev", .finished, secondsAgo: 90_000, AgentDetails(title: "Ancienne session")),
+            agent("d", "extension", .background, secondsAgo: 3_100, AgentDetails(title: "End-to-end tests")),
+            agent("e", "dev", .finished, secondsAgo: 90_000, AgentDetails(title: "Old session")),
         ]
     }
 

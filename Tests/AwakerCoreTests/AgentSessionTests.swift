@@ -72,11 +72,11 @@ import Testing
                                    state: .waiting(tool: "Bash"), stateSince: Date(),
                                    details: AgentDetails(title: "Migration", pendingAction: "git push origin main"))
         let request = waiting.notification(after: .working)
-        #expect(request?.title == "Migration a besoin de toi")
-        #expect(request?.body == "Il demande ton accord pour : git push origin main. Projet nexus.")
+        #expect(request?.title == "Migration needs you")
+        #expect(request?.body == "It asks permission for: git push origin main. Project nexus.")
 
         let done = agent("b", .finished, minutesAgo: 0)
-        #expect(done.notification(after: .working)?.title == "b a terminé")
+        #expect(done.notification(after: .working)?.title == "b finished")
         // Nothing to say when it was not working before, or when nothing changed.
         #expect(done.notification(after: .waiting(tool: nil)) == nil)
         #expect(done.notification(after: .finished) == nil)
@@ -116,7 +116,7 @@ import Testing
         #expect(recap.finished == ["finished-meanwhile"])
         #expect(recap.waiting == ["waiting"])
         #expect(recap.duration == 3_600)
-        #expect(recap.sentence == "1 agent a terminé, 1 t'attend.")
+        #expect(recap.sentence == "1 agent finished, 1 needs you.")
         #expect(AwayRecap(agents: [agent("busy", .working, minutesAgo: 10, now: now)], leftAt: leftAt, now: now) == nil)
     }
 
@@ -178,7 +178,7 @@ import Testing
         let text = """
         {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"/tmp/a.swift"}}]}}
         """
-        #expect(TranscriptParser.details(in: text).pendingAction == "Edit : /tmp/a.swift")
+        #expect(TranscriptParser.details(in: text).pendingAction == "Edit: /tmp/a.swift")
     }
 
     @Test func aFreshReadKeepsWhatAnOlderOneKnew() {
@@ -209,7 +209,7 @@ import Testing
 
 @Suite struct FormatDollarsTests {
     @Test func dollars() {
-        #expect(Format.dollars(26.494) == "26,49 $")
-        #expect(Format.dollars(184.2) == "184 $")
+        #expect(Format.dollars(26.494) == "$26.49")
+        #expect(Format.dollars(184.2) == "$184")
     }
 }

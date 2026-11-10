@@ -180,11 +180,11 @@ public struct AwayRecap: Equatable, Sendable {
         if finished.isEmpty && waiting.isEmpty { return nil }
     }
 
-    /// "2 agents ont terminé, 1 t'attend."
+    /// "2 agents finished, 1 needs you."
     public var sentence: String {
         var parts: [String] = []
-        if !finished.isEmpty { parts.append(Format.plural(finished.count, "agent a terminé", "agents ont terminé")) }
-        if !waiting.isEmpty { parts.append(Format.plural(waiting.count, "t'attend", "t'attendent")) }
+        if !finished.isEmpty { parts.append(Format.plural(finished.count, "agent finished", "agents finished")) }
+        if !waiting.isEmpty { parts.append(Format.plural(waiting.count, "needs you", "need you")) }
         return parts.joined(separator: ", ") + "."
     }
 }

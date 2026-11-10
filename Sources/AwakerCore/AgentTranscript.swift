@@ -79,7 +79,7 @@ public enum TranscriptParser {
             .flatMap(clean)
         guard let subject else { return name }
         let short = subject.count > 80 ? String(subject.prefix(80)) + "…" : subject
-        return name == "Bash" ? short : "\(name) : \(short)"
+        return name == "Bash" ? short : "\(name): \(short)"
     }
 }
 

@@ -29,62 +29,62 @@ struct SettingsView: View {
             Section {
                 LabeledContent {
                     if awake.isAuthorized {
-                        Button("Retirer", role: .destructive) { awake.removeAuthorization() }
+                        Button("Remove", role: .destructive) { awake.removeAuthorization() }
                     } else {
-                        Button("Installer…") { awake.installAuthorization() }
+                        Button("Install…") { awake.installAuthorization() }
                     }
                 } label: {
-                    Label(awake.isAuthorized ? "Autorisation installée" : "Autorisation requise",
+                    Label(awake.isAuthorized ? "Authorization installed" : "Authorization needed",
                           systemImage: awake.isAuthorized ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                         .symbolRenderingMode(.multicolor)
-                    Text("Garder le Mac éveillé capot fermé passe par pmset, qui demande les droits administrateur. L'autorisation ne couvre que cette commande.")
+                    Text("Keeping the Mac awake with the lid closed goes through pmset, which needs administrator rights. The authorization covers that command only.")
                 }
             }
 
             Section("Session") {
-                Picker("Durée par défaut", selection: $settings.defaultMinutes) {
+                Picker("Default duration", selection: $settings.defaultMinutes) {
                     ForEach(AppSettings.durationChoices, id: \.minutes) { Text($0.label).tag($0.minutes) }
                 }
                 Toggle(isOn: $settings.autoMode) {
-                    Text("Mode auto")
-                    Text("Garde le Mac éveillé tant qu'un agent travaille ou qu'une de ses commandes tourne, et rend la main 3 minutes après. Une session simplement ouverte ne compte pas.")
+                    Text("Auto mode")
+                    Text("Keeps the Mac awake while an agent is working or one of its commands is running, and lets it sleep 3 minutes later. A session that is merely open doesn't count.")
                 }
             }
 
             Section("Protections") {
                 Toggle(isOn: $settings.batteryGuard) {
-                    Text("Arrêter quand la batterie est faible")
-                    Text("Sur batterie uniquement. Branché, le Mac reste éveillé.")
+                    Text("Stop when the battery is low")
+                    Text("On battery only. Plugged in, the Mac stays awake.")
                 }
-                Picker("Seuil de batterie", selection: $settings.batteryThreshold) {
-                    ForEach(AppSettings.thresholdChoices, id: \.self) { Text("\($0) %").tag($0) }
+                Picker("Battery threshold", selection: $settings.batteryThreshold) {
+                    ForEach(AppSettings.thresholdChoices, id: \.self) { Text("\($0)%").tag($0) }
                 }
                 .disabled(!settings.batteryGuard)
                 Toggle(isOn: $settings.acOnly) {
-                    Text("Seulement sur secteur")
-                    Text("S'arrête dès que le chargeur est débranché.")
+                    Text("Only when plugged in")
+                    Text("Stops as soon as the charger is unplugged.")
                 }
                 Toggle(isOn: $settings.thermalGuard) {
-                    Text("Arrêter en cas de surchauffe")
-                    Text("Capot fermé, la chaleur s'évacue moins bien.")
+                    Text("Stop when the Mac overheats")
+                    Text("With the lid closed, heat escapes less easily.")
                 }
             }
 
-            Section("Système") {
-                Toggle("Durée dans la barre des menus", isOn: $settings.showElapsedInMenuBar)
+            Section("System") {
+                Toggle("Show duration in the menu bar", isOn: $settings.showElapsedInMenuBar)
                 Toggle(isOn: $settings.notifications) {
-                    Text("Notifications des sessions")
-                    Text("Quand le mode auto lance une session, ou qu'une protection l'arrête.")
+                    Text("Session notifications")
+                    Text("When auto mode starts a session, or a protection stops one.")
                 }
                 Toggle(isOn: $settings.agentNotifications) {
-                    Text("Notifications des agents")
-                    Text("Quand un agent termine ou a besoin de toi, et un récapitulatif à ton retour devant le Mac.")
+                    Text("Agent notifications")
+                    Text("When an agent finishes or needs you, and a recap when you come back to the Mac.")
                 }
-                Toggle("Lancer à l'ouverture de session",
+                Toggle("Open at login",
                        isOn: Binding(get: { awake.launchesAtLogin }, set: { awake.setLaunchesAtLogin($0) }))
             }
 
-            Section("Mises à jour") {
+            Section("Updates") {
                 LabeledContent {
                     updateControl
                 } label: {
@@ -105,22 +105,22 @@ struct SettingsView: View {
     @ViewBuilder private var updateControl: some View {
         switch updater.status {
         case .available(let release):
-            Button("Installer \(release.version)") { Task { await updater.install(release) } }
+            Button("Install \(release.version)") { Task { await updater.install(release) } }
                 .buttonStyle(.glassProminent)
         case .checking, .downloading:
             ProgressView().controlSize(.small)
         case .idle, .upToDate, .failed:
-            Button("Rechercher") { Task { await updater.check() } }
+            Button("Check Now") { Task { await updater.check() } }
         }
     }
 
     private var updateStatus: String {
         switch updater.status {
-        case .idle: "Vérification automatique une fois par jour."
-        case .checking: "Recherche d'une nouvelle version…"
-        case .upToDate: "Tu as la dernière version."
-        case .available(let release): "La version \(release.version) est disponible. L'installation relance Awaker et arrête la session en cours."
-        case .downloading(let release): "Téléchargement de la version \(release.version)…"
+        case .idle: "Checked automatically once a day."
+        case .checking: "Checking for a new version…"
+        case .upToDate: "You have the latest version."
+        case .available(let release): "Version \(release.version) is available. Installing relaunches Awaker and stops the running session."
+        case .downloading(let release): "Downloading version \(release.version)…"
         case .failed(let message): message
         }
     }

@@ -57,8 +57,8 @@ private struct SessionTimer: View {
     }
 
     private var until: String {
-        if let end = awake.endsAt { return "Jusqu'à \(Format.time(end))" }
-        return awake.trigger == .auto ? "Tant qu'un agent travaille" : "Sans limite"
+        if let end = awake.endsAt { return "Until \(Format.time(end))" }
+        return awake.trigger == .auto ? "While an agent is working" : "No limit"
     }
 }
 
@@ -71,21 +71,21 @@ private struct SessionControls: View {
     var body: some View {
         @Bindable var settings = settings
         if !awake.isAuthorized {
-            Button("Installer l'autorisation…", systemImage: "key.fill") { awake.installAuthorization() }
+            Button("Install authorization…", systemImage: "key.fill") { awake.installAuthorization() }
                 .buttonStyle(.glassProminent)
                 .controlSize(.extraLarge)
         } else if awake.isActive {
-            Button("Arrêter la session", systemImage: "stop.fill") { awake.deactivate() }
+            Button("Stop session", systemImage: "stop.fill") { awake.deactivate() }
                 .buttonStyle(.glass)
                 .controlSize(.extraLarge)
                 .keyboardShortcut(.space, modifiers: [])
         } else {
             HStack(spacing: spacing) {
-                Button("Lancer la session", systemImage: "play.fill") { awake.activate(for: settings.defaultDuration) }
+                Button("Start session", systemImage: "play.fill") { awake.activate(for: settings.defaultDuration) }
                     .buttonStyle(.glassProminent)
                     .keyboardShortcut(.space, modifiers: [])
                 Menu {
-                    Picker("Durée", selection: $settings.defaultMinutes) {
+                    Picker("Duration", selection: $settings.defaultMinutes) {
                         ForEach(AppSettings.durationChoices, id: \.minutes) { Text($0.label).tag($0.minutes) }
                     }
                     .pickerStyle(.inline)
@@ -100,7 +100,7 @@ private struct SessionControls: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .glassEffect(.regular.interactive())
-                .help("Durée de la session")
+                .help("Session length")
             }
             .controlSize(.extraLarge)
         }
@@ -115,7 +115,7 @@ private struct ReadinessPill: View {
 
     var body: some View {
         HStack(spacing: 18) {
-            fact(awake.isAuthorized ? .ready : .blocked, awake.isAuthorized ? "Autorisé" : "Autorisation requise")
+            fact(awake.isAuthorized ? .ready : .blocked, awake.isAuthorized ? "Authorized" : "Authorization needed")
             fact(powerLevel, powerText)
             fact(agentsLevel, agentsText)
         }
@@ -160,9 +160,9 @@ private struct ReadinessPill: View {
     }
 
     private var powerText: String {
-        if awake.isThermalCritical && settings.thermalGuard { return "Mac trop chaud" }
-        guard let battery = awake.battery else { return "Sur secteur" }
-        return "\(battery.onAC ? "Secteur" : "Batterie") · \(battery.percent) %"
+        if awake.isThermalCritical && settings.thermalGuard { return "Mac too hot" }
+        guard let battery = awake.battery else { return "Plugged in" }
+        return "\(battery.onAC ? "Plugged in" : "Battery") · \(battery.percent)%"
     }
 
     /// Someone waiting for you beats everything else.
@@ -172,8 +172,8 @@ private struct ReadinessPill: View {
     }
 
     private var agentsText: String {
-        if monitor.waitingCount > 0 { return Format.plural(monitor.waitingCount, "agent t'attend", "agents t'attendent") }
-        if monitor.busyCount > 0 { return Format.plural(monitor.busyCount, "agent au travail", "agents au travail") }
-        return monitor.agents.isEmpty ? "Aucun agent" : Format.plural(monitor.agents.count, "agent au repos", "agents au repos")
+        if monitor.waitingCount > 0 { return Format.plural(monitor.waitingCount, "agent needs you", "agents need you") }
+        if monitor.busyCount > 0 { return Format.plural(monitor.busyCount, "agent working", "agents working") }
+        return monitor.agents.isEmpty ? "No agents" : Format.plural(monitor.agents.count, "agent idle", "agents idle")
     }
 }

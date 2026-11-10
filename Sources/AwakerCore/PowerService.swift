@@ -38,7 +38,7 @@ public enum PowerService {
     public static func installAuthorization() -> String? {
         let user = NSUserName()
         guard user.allSatisfy({ $0.isLetter || $0.isNumber || "_-.".contains($0) }) else {
-            return "Nom d'utilisateur inattendu."
+            return "Unexpected user name."
         }
         let rule = "\(user) ALL=(root) NOPASSWD: \(pmset) -a disablesleep 0, \(pmset) -a disablesleep 1"
         let script = """

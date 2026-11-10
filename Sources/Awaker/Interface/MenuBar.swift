@@ -28,35 +28,35 @@ struct MenuBarContent: View {
         }
         Divider()
         if awake.isAuthorized {
-            Button(awake.isActive ? "Arrêter la session" : "Lancer une session (\(settings.defaultDurationLabel.lowercased()))") { awake.toggle() }
+            Button(awake.isActive ? "Stop session" : "Start Session (\(settings.defaultDurationLabel.lowercased()))") { awake.toggle() }
                 .keyboardShortcut("a")
-            Menu("Lancer pour…") {
+            Menu("Start For…") {
                 ForEach(AppSettings.durationChoices, id: \.minutes) { choice in
                     Button(choice.label) {
                         awake.activate(for: AppSettings.duration(minutes: choice.minutes))
                     }
                 }
             }
-            Toggle("Mode auto", isOn: $settings.autoMode)
+            Toggle("Auto Mode", isOn: $settings.autoMode)
         } else {
-            Button("Installer l'autorisation…") { awake.installAuthorization() }
+            Button("Install authorization…") { awake.installAuthorization() }
         }
         Divider()
         if let release = updater.availableRelease {
-            Button("Installer Awaker \(release.version)…") { Task { await updater.install(release) } }
+            Button("Install Awaker \(release.version)…") { Task { await updater.install(release) } }
         }
-        Button("Ouvrir Awaker…") { WindowOpener.shared.open() }
+        Button("Open Awaker…") { WindowOpener.shared.open() }
             .keyboardShortcut(",")
-        Button("Quitter") { NSApp.terminate(nil) }
+        Button("Quit") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
     }
 
     private var status: String {
         guard awake.isActive, let start = awake.startedAt else {
-            return "Au repos · \(Format.plural(monitor.busyCount, "agent au travail", "agents au travail"))"
+            return "Idle · \(Format.plural(monitor.busyCount, "agent working", "agents working"))"
         }
-        var text = "Éveillé depuis \(Format.duration(awake.now.timeIntervalSince(start)))"
-        if let end = awake.endsAt { text += " · jusqu'à \(Format.time(end))" }
+        var text = "Awake for \(Format.duration(awake.now.timeIntervalSince(start)))"
+        if let end = awake.endsAt { text += " · until \(Format.time(end))" }
         if awake.trigger == .auto { text += " · auto" }
         return text
     }

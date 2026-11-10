@@ -7,9 +7,9 @@ enum Screen: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .home: "Accueil"
-        case .history: "Historique"
-        case .settings: "Réglages"
+        case .home: "Home"
+        case .history: "History"
+        case .settings: "Settings"
         }
     }
 
@@ -45,7 +45,7 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
-                Picker("Écran", selection: $screen) {
+                Picker("Screen", selection: $screen) {
                     ForEach(Screen.allCases) { screen in
                         Label(screen.title, systemImage: screen.symbol).tag(screen)
                     }

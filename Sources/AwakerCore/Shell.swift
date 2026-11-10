@@ -39,6 +39,6 @@ public enum Shell {
         guard let error else { return nil }
         let userCancelled = -128
         if error[NSAppleScript.errorNumber] as? Int == userCancelled { return nil }
-        return error[NSAppleScript.errorMessage] as? String ?? "Erreur inconnue."
+        return error[NSAppleScript.errorMessage] as? String ?? "Unknown error."
     }
 }

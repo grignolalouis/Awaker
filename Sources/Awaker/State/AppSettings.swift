@@ -7,7 +7,7 @@ import Observation
 @Observable
 final class AppSettings {
     static let durationChoices: [(minutes: Int, label: String)] = [
-        (0, "Illimité"), (30, "30 min"), (60, "1 h"), (120, "2 h"), (240, "4 h"), (480, "8 h"),
+        (0, "No limit"), (30, "30 min"), (60, "1 h"), (120, "2 h"), (240, "4 h"), (480, "8 h"),
     ]
     static let thresholdChoices = [10, 15, 20, 30]
 

@@ -19,7 +19,7 @@ enum Brand {
             return true
         }
         image.isTemplate = true
-        image.accessibilityDescription = active ? "Awaker actif" : "Awaker inactif"
+        image.accessibilityDescription = active ? "Awaker active" : "Awaker inactive"
         return image
     }
 }

@@ -19,9 +19,9 @@ struct HistoryView: View {
     var body: some View {
         VStack(spacing: 12) {
             HStack {
-                Picker("Filtre", selection: $filter) {
-                    Text("Toutes").tag(Filter.all)
-                    Text("Manuelles").tag(Filter.only(.manual))
+                Picker("Filter", selection: $filter) {
+                    Text("All").tag(Filter.all)
+                    Text("Manual").tag(Filter.only(.manual))
                     Text("Auto").tag(Filter.only(.auto))
                 }
                 .pickerStyle(.segmented)
@@ -32,13 +32,13 @@ struct HistoryView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
-                Button("Effacer…", systemImage: "trash", role: .destructive) { isConfirmingClear = true }
+                Button("Clear…", systemImage: "trash", role: .destructive) { isConfirmingClear = true }
                     .buttonStyle(.glass)
                     .disabled(history.sessions.isEmpty)
             }
             if sessions.isEmpty {
-                ContentUnavailableView("Aucune session", systemImage: "clock",
-                                       description: Text("Chaque session apparaîtra ici avec sa durée et sa raison d'arrêt."))
+                ContentUnavailableView("No sessions", systemImage: "clock",
+                                       description: Text("Each session will show up here with its length and why it ended."))
                     .glassEffect(in: .rect(cornerRadius: PanelMetrics.radius))
             } else {
                 GlassPanel {
@@ -51,10 +51,10 @@ struct HistoryView: View {
         .frame(maxWidth: PanelMetrics.maxWidth)
         .frame(maxHeight: .infinity, alignment: .top)
         .padding()
-        .confirmationDialog("Effacer l'historique ?", isPresented: $isConfirmingClear) {
-            Button("Tout effacer", role: .destructive) { history.clear() }
+        .confirmationDialog("Clear history?", isPresented: $isConfirmingClear) {
+            Button("Clear All", role: .destructive) { history.clear() }
         } message: {
-            Text("Les sessions terminées seront supprimées. La session en cours est conservée.")
+            Text("Finished sessions will be removed. A running session is kept.")
         }
     }
 
@@ -105,14 +105,14 @@ private struct SessionRow: View {
 
     private var title: String {
         let start = "\(Format.day(session.start)), \(Format.time(session.start))"
-        guard let end = session.end else { return "\(start) → en cours" }
+        guard let end = session.end else { return "\(start) → now" }
         return "\(start) – \(Format.time(end))"
     }
 
     private var subtitle: String {
         var parts = [session.trigger.label]
         if let reason = session.endReason { parts.append(reason.label) }
-        if let start = session.startBattery, let end = session.endBattery { parts.append("batterie \(start) → \(end) %") }
+        if let start = session.startBattery, let end = session.endBattery { parts.append("battery \(start) → \(end)%") }
         return parts.joined(separator: " · ")
     }
 }

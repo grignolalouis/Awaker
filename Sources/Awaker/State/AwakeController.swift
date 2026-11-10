@@ -32,6 +32,8 @@ final class AwakeController {
     @ObservationIgnored private var assertionID: IOPMAssertionID = 0
     @ObservationIgnored private var sessionID: UUID?
     @ObservationIgnored private var ticker: Timer?
+    /// The last attempt to give the Mac its sleep back failed, and the user has been told.
+    @ObservationIgnored private var isShowingRestoreFailure = false
 
     private let tickInterval: TimeInterval = 30
 
@@ -53,7 +55,7 @@ final class AwakeController {
 
     /// Why a session can't start right now, in the user's words. Nil when it can.
     var startBlocker: String? {
-        if !isAuthorized { return "Installe d'abord l'autorisation dans les réglages." }
+        if !isAuthorized { return "Install the authorization in Settings first." }
         return settings.powerPolicy.blocker(battery: battery, isThermalCritical: isThermalCritical)?.blockerMessage(battery: battery)
     }
 
@@ -92,7 +94,7 @@ final class AwakeController {
 
         if !isActive {
             guard system.setSleepDisabled(true) else {
-                lastError = "pmset a refusé la commande. Réinstalle l'autorisation."
+                lastError = "pmset refused the command. Reinstall the authorization."
                 return false
             }
             IOPMAssertionCreateWithName(
@@ -109,8 +111,8 @@ final class AwakeController {
         self.trigger = trigger
         endsAt = duration.map { Date().addingTimeInterval($0) }
         if isAutomatic {
-            let count = Format.plural(agents.busyCount, "agent au travail", "agents au travail")
-            notify("Mac maintenu éveillé", "\(count). Tu peux fermer le capot.")
+            let count = Format.plural(agents.busyCount, "agent working", "agents working")
+            notify("Keeping the Mac awake", "\(count). You can close the lid.")
         } else {
             autoMode.userStarted()
         }
@@ -136,9 +138,10 @@ final class AwakeController {
 
         if !restored {
             // The worst failure this app can have: say so, and `reconcileSleepSetting` retries on every tick.
-            lastError = "La veille normale n'a pas pu être rétablie. Nouvel essai en cours."
+            lastError = "Normal sleep couldn't be restored. Trying again."
+            isShowingRestoreFailure = true
         } else if reason.isAutomatic {
-            notify("Veille normale rétablie", reason.label)
+            notify("Normal sleep restored", reason.label)
         }
     }
 
@@ -180,8 +183,9 @@ final class AwakeController {
         guard isAuthorized else { return }
         let isDisabled = system.isSleepDisabled()
         guard isDisabled != isActive else { return }
-        if system.setSleepDisabled(isActive), !isActive, lastError?.hasPrefix("La veille normale") == true {
+        if system.setSleepDisabled(isActive), !isActive, isShowingRestoreFailure {
             lastError = nil
+            isShowingRestoreFailure = false
         }
     }
 
@@ -226,7 +230,7 @@ final class AwakeController {
         do {
             try system.setLaunchesAtLogin(enabled)
         } catch {
-            lastError = "Ouverture de session : \(error.localizedDescription)"
+            lastError = "Open at login: \(error.localizedDescription)"
         }
         launchesAtLogin = system.launchesAtLogin()
     }
