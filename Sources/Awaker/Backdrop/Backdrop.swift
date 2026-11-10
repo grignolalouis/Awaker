@@ -53,6 +53,7 @@ struct BackdropView: View {
                     }
                     Backdrop.dim
                     AsciiArtView(size: proxy.size, isPaused: !isAnimating) { video?.currentFrame() ?? image }
+                        .mask { WindowButtonsClearing() }
                 }
             } else {
                 Color.black
@@ -77,6 +78,26 @@ struct BackdropView: View {
             isScreenAwake = true
         }
         .accessibilityHidden(true)
+    }
+}
+
+/// Everything but a soft-edged patch behind the window's close, minimize and zoom buttons.
+/// The buttons are translucent (more so when the window is inactive): characters showing through them
+/// made them hard to see, so no characters are drawn there.
+private struct WindowButtonsClearing: View {
+    /// Where the three buttons sit in a window with a unified toolbar, with a little room around them.
+    private let patch = CGRect(x: 12, y: 12, width: 86, height: 44)
+
+    var body: some View {
+        Rectangle()
+            .overlay(alignment: .topLeading) {
+                Capsule()
+                    .frame(width: patch.width, height: patch.height)
+                    .offset(x: patch.minX, y: patch.minY)
+                    .blur(radius: 5)
+                    .blendMode(.destinationOut)
+            }
+            .compositingGroup()
     }
 }
 
