@@ -30,6 +30,10 @@ final class AgentMonitor {
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     private let pollInterval: TimeInterval = 2
+    /// Sub-agents are looked up on disk (a folder listing and a few small reads per session) less often
+    /// than the rest: they come and go over minutes, not seconds.
+    private let subagentInterval: TimeInterval = 6
+    @ObservationIgnored private var subagentsReadAt = Date.distantPast
     /// Shorter absences don't deserve a recap.
     private let minimumAbsence: TimeInterval = 5 * 60
 
@@ -82,6 +86,9 @@ final class AgentMonitor {
 
         let reader = reader
         let known = cache
+        let readsSubagents = Date().timeIntervalSince(subagentsReadAt) >= subagentInterval
+        if readsSubagents { subagentsReadAt = Date() }
+        let knownSubagents = Dictionary(agents.map { ($0.id, $0.subagents) }, uniquingKeysWith: { first, _ in first })
         // File reads happen off the main thread; transcripts can be large.
         let (sessions, newCache) = await Task.detached(priority: .utility) {
             var cache = known
@@ -91,7 +98,9 @@ final class AgentMonitor {
                 var session = session
                 let transcript = reader.transcript(of: session)
                 session.details = Self.details(of: session, transcript: transcript, reader: reader, cache: &cache)
-                session.subagents = transcript.map { reader.subagents(besideTranscript: $0) } ?? []
+                session.subagents = readsSubagents
+                    ? transcript.map { reader.subagents(besideTranscript: $0) } ?? []
+                    : knownSubagents[session.id] ?? []
                 session.commands = commands[session.pid] ?? []
                 return session
             }

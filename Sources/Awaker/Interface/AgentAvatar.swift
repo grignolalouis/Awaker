@@ -30,7 +30,7 @@ struct AgentAvatar: View {
 
     var body: some View {
         let skin = fixedSkin ?? AvatarSkin.pick(seed: seed, hidden: settings.hiddenSkins)
-        TimelineView(.animation(minimumInterval: frameInterval, paused: !isAnimated)) { timeline in
+        TimelineView(SteadySchedule(interval: frameInterval, paused: !isAnimated)) { timeline in
             let step = isAnimated ? Int(timeline.date.timeIntervalSinceReferenceDate / frameInterval) : 0
             let isAsleep = pose == .asleep
             ZStack(alignment: .topTrailing) {

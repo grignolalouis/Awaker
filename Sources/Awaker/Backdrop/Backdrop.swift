@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import ImageIO
 import SwiftUI
 
 /// One picture the window can sit on: a still (`<id>.jpg`) and, optionally, a short seamless loop made
@@ -27,37 +28,42 @@ enum Backdrop {
         scenes.first { $0.id == id } ?? scenes[0]
     }
 
+    /// The scene's still, at full size. Only the scene on screen is kept: the others are a few megabytes each.
     static func image(of scene: BackdropScene) -> CGImage? {
-        if let image = images[scene.id] { return image }
+        if let still, still.scene == scene.id { return still.image }
         let image = url(scene, "jpg").flatMap { NSImage(contentsOf: $0) }?.cgImage(forProposedRect: nil, context: nil, hints: nil)
-        images[scene.id] = image
+        // A failed load is remembered too, so a missing file is not looked up on every view update.
+        still = (scene.id, image)
         return image
     }
 
-    /// The scene's loop. Only one is kept: a player holds on to a video decoder.
-    static func video(of scene: BackdropScene) -> VideoLoop? {
-        if let current = video, current.scene == scene.id { return current.loop }
+    /// The scene's loop, or nil to let go of the player (Reduce Motion). Only one is kept: a player holds on
+    /// to a video decoder. Called when the scene or the setting changes, never while a view is being drawn.
+    static func video(of scene: BackdropScene?) -> VideoLoop? {
+        if let current = video, current.scene == scene?.id { return current.loop }
         video?.loop.pause()
-        video = url(scene, "mp4").map { (scene.id, VideoLoop(url: $0)) }
+        video = scene.flatMap { scene in url(scene, "mp4").map { (scene.id, VideoLoop(url: $0)) } }
         return video?.loop
     }
 
     /// A small version of the still, for the picker in Settings.
     static func thumbnail(of scene: BackdropScene) -> CGImage? {
-        if let thumbnail = thumbnails[scene.id] { return thumbnail }
-        guard let image = image(of: scene) else { return nil }
-        let size = (width: 320, height: 320 * image.height / max(image.width, 1))
-        let context = CGContext(data: nil, width: size.width, height: size.height, bitsPerComponent: 8, bytesPerRow: 0,
-                                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
-        context?.interpolationQuality = .high
-        context?.draw(image, in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
-        let thumbnail = context?.makeImage()
-        thumbnails[scene.id] = thumbnail
+        if let known = thumbnails[scene.id] { return known }
+        // Decoded straight to thumbnail size: the full picture is never loaded for this.
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: 480,
+        ]
+        let thumbnail = url(scene, "jpg")
+            .flatMap { CGImageSourceCreateWithURL($0 as CFURL, nil) }
+            .flatMap { CGImageSourceCreateThumbnailAtIndex($0, 0, options as CFDictionary) }
+        thumbnails[scene.id] = .some(thumbnail)
         return thumbnail
     }
 
-    private static var images: [String: CGImage] = [:]
-    private static var thumbnails: [String: CGImage] = [:]
+    private static var still: (scene: String, image: CGImage?)?
+    /// Nil inside means the thumbnail could not be made; it is not tried again.
+    private static var thumbnails: [String: CGImage?] = [:]
     private static var video: (scene: String, loop: VideoLoop)?
 
     private static func url(_ scene: BackdropScene, _ fileExtension: String) -> URL? {
@@ -83,12 +89,26 @@ struct BackdropView: View {
     @State private var isScreenAwake = CGDisplayIsAsleep(CGMainDisplayID()) == 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(AppSettings.self) private var settings
+    /// The loop of the scene on screen. Nil with Reduce Motion, and for a scene without a loop.
+    @State private var video: VideoLoop?
 
     private var isAnimating: Bool { isWindowVisible && isScreenAwake && !reduceMotion }
 
+    /// Everything the player depends on. When any of it changes, `updateVideo` puts the player in step.
+    private struct Playback: Equatable {
+        let scene: BackdropScene
+        let isAnimating: Bool
+        let reduceMotion: Bool
+    }
+
+    private func updateVideo(_ playback: Playback) {
+        // Asking for another scene (or none) pauses and releases the previous player.
+        video = Backdrop.video(of: playback.reduceMotion ? nil : playback.scene)
+        if playback.isAnimating { video?.play() } else { video?.pause() }
+    }
+
     var body: some View {
         let scene = Backdrop.scene(settings.backdrop)
-        let video = reduceMotion ? nil : Backdrop.video(of: scene)
         // GeometryReader takes exactly the offered size, so the overflowing image can't widen the layout.
         GeometryReader { proxy in
             if let image = Backdrop.image(of: scene) {
@@ -102,6 +122,8 @@ struct BackdropView: View {
                         .clipped()
                     if let video {
                         VideoLoopView(video: video)
+                            // A new scene brings a new player: the layer must be rebuilt around it.
+                            .id(ObjectIdentifier(video))
                     }
                     Color.black.opacity(scene.dim)
                     AsciiArtView(size: proxy.size, isPaused: !isAnimating) { video?.currentFrame() ?? image }
@@ -113,11 +135,8 @@ struct BackdropView: View {
                 Color.black
             }
         }
-        .onChange(of: isAnimating, initial: true) { _, animating in
-            if animating { video?.play() } else { video?.pause() }
-        }
-        .onChange(of: scene) {
-            if isAnimating { video?.play() }
+        .onChange(of: Playback(scene: scene, isAnimating: isAnimating, reduceMotion: reduceMotion), initial: true) { _, playback in
+            updateVideo(playback)
         }
         .onDisappear { video?.pause() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { notification in
@@ -255,10 +274,11 @@ private struct AsciiArtView: View {
 
     @Environment(\.displayScale) private var displayScale
 
-    private let frameInterval = 0.2
+    /// Four pictures a second: the loop plays slowly, and each picture costs a few milliseconds of processor.
+    private let frameInterval = 0.25
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: frameInterval, paused: isPaused)) { _ in
+        TimelineView(SteadySchedule(interval: frameInterval, paused: isPaused)) { _ in
             if let image = frame(), let art = Backdrop.artist.render(image, size: size, scale: displayScale) {
                 Image(decorative: art, scale: displayScale)
                     .frame(width: size.width, height: size.height, alignment: .topLeading)

@@ -12,8 +12,10 @@ Scripts/build.sh
 # outside build/ (which each build erases).
 TOOLS=.build/dmg-tools
 if [[ ! -x "$TOOLS/bin/dmgbuild" ]]; then
+  # Start clean: a half-made environment from a failed run must not be reused.
+  rm -rf "$TOOLS"
   python3 -m venv "$TOOLS"
-  "$TOOLS/bin/pip" install --quiet dmgbuild==1.6.7
+  "$TOOLS/bin/pip" install --quiet --disable-pip-version-check --no-deps -r Scripts/dmg-requirements.txt
 fi
 
 DMG=build/Awaker.dmg

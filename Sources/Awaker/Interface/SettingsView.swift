@@ -140,7 +140,9 @@ struct SettingsView: View {
                 }
                 .controlSize(.small)
             } footer: {
-                Text("Each agent wears one of the selected avatars. \(AvatarSkin.all.count - settings.hiddenSkins.count) of \(AvatarSkin.all.count) selected.")
+                // Counted from the bundled skins: a hidden name may be a skin a later version no longer has.
+                let selected = AvatarSkin.all.count { !settings.hiddenSkins.contains($0.name) }
+                Text("Each agent wears one of the selected avatars. \(selected) of \(AvatarSkin.all.count) selected.")
             }
 
             Section("System") {

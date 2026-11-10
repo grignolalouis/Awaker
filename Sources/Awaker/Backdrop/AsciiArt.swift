@@ -32,6 +32,8 @@ struct GlyphSet {
     let lines: [CTLine]
     /// Per character, its ink in each sub-cell scaled to its own peak: a stroke compares as a stroke.
     let shapes: [[Float]]
+    /// The same, end to end (`subCount` values per character), for the inner loop of the renderer.
+    let flatShapes: [Float]
     /// Per character, its overall ink, scaled so the densest character is 1.
     let ink: [Float]
     /// Indices of the density ramp, in ramp order.
@@ -55,6 +57,7 @@ struct GlyphSet {
             let peak = values.max() ?? 0
             return peak > 0 ? values.map { $0 / peak } : values
         }
+        flatShapes = shapes.flatMap { $0 }
         let means = coverage.map { $0.reduce(0, +) / Float(Self.subCount) }
         let densest = max(means.max() ?? 1, 0.0001)
         ink = means.map { $0 / densest }
@@ -129,6 +132,17 @@ final class AsciiArtist {
     private var previous: [Int] = []
     private var previousSize: (columns: Int, rows: Int) = (0, 0)
     private var masks: GlyphMasks?
+    /// The last bitmap drawn (premultiplied RGBA, row 0 at the top), kept so a frame only repaints the cells
+    /// that changed. On a slow video most of the picture is the same from one frame to the next.
+    private var canvas: [UInt8] = []
+    /// Per cell, what the canvas shows: the glyph and the ink color packed as `glyph << 24 | red << 16 | green << 8 | blue`.
+    private var painted: [UInt32] = []
+    private var canvasSize: (width: Int, height: Int) = (0, 0)
+    /// A cell keeps its paint while its glyph is the same and no color channel moved by more than this (out of 255).
+    /// Video compression makes flat areas shimmer by a step or two; repainting them would cost a lot for nothing.
+    private let colorTolerance = 3
+    /// The screen's colors for the picture's colors. See `ColorTable`.
+    private var colors: ColorTable?
     /// The picture's brightness range, measured every few frames rather than on each one.
     private var range: (darkest: Float, brightest: Float)?
     private var framesSinceRange = 0
@@ -144,9 +158,6 @@ final class AsciiArtist {
     /// tried 1.8, too loud, and 0.6, too dull), a little lighter so they read as ink on the dimmed image.
     private let saturation: CGFloat = 1
     private let brightness: CGFloat = 1.3
-    /// Fully opaque: the characters are the picture, the image behind only fills the gaps between them.
-    private let baseOpacity: CGFloat = 1
-    private let opacityRange: CGFloat = 0
 
     /// Cells large enough for each character to be read as a character, not as a grain.
     /// Whole points, so cells land on whole pixels at any display scale.
@@ -169,16 +180,28 @@ final class AsciiArtist {
         framesSinceRange += 1
         if masks?.scale != scale { masks = glyphs.masks(scale: scale) }
         guard let masks else { return nil }
+        // The bitmap is made in the screen's own color space, so showing it costs a copy and no conversion.
+        let screenSpace = NSScreen.main?.colorSpace?.cgColorSpace ?? ColorTable.sRGB
+        if colors?.space != screenSpace {
+            colors = ColorTable(space: screenSpace)
+            painted = []
+        }
+        guard let colors else { return nil }
         if previousSize != (columns, rows) {
             previous = [Int](repeating: -1, count: columns * rows)
             previousSize = (columns, rows)
         }
 
         let width = columns * masks.width, height = rows * masks.height
-        var pixels = Data(count: width * height * 4)
+        if canvasSize != (width, height) || painted.count != columns * rows {
+            canvas = [UInt8](repeating: 0, count: width * height * 4)
+            painted = [UInt32](repeating: .max, count: columns * rows)
+            canvasSize = (width, height)
+        }
         var sub = [Float](repeating: 0, count: GlyphSet.subCount)
-        pixels.withUnsafeMutableBytes { (buffer: UnsafeMutableRawBufferPointer) in
-            guard let output = buffer.bindMemory(to: UInt8.self).baseAddress else { return }
+        let tolerance = colorTolerance
+        canvas.withUnsafeMutableBufferPointer { buffer in
+            guard let output = buffer.baseAddress else { return }
             for row in 0..<rows {
                 for column in 0..<columns {
                     let cellIndex = row * columns + column
@@ -188,32 +211,39 @@ final class AsciiArtist {
                     let glyph = pick(sub: sub, mean: mean, level: level, kept: previous[cellIndex])
                     previous[cellIndex] = glyph
 
-                    // Premultiplied RGBA: each pixel is the cell's ink color times the glyph's coverage.
-                    let ink = vivid(color)
-                    let opacity = baseOpacity + opacityRange * CGFloat(level)
-                    let red = Int(ink.red * opacity * 255), green = Int(ink.green * opacity * 255)
-                    let blue = Int(ink.blue * opacity * 255), alpha = Int(opacity * 255)
+                    let (red, green, blue) = colors.screenColor(for: vivid(color))
+                    let old = painted[cellIndex]
+                    if Int(old >> 24) == glyph,
+                       abs(Int((old >> 16) & 0xFF) - red) <= tolerance,
+                       abs(Int((old >> 8) & 0xFF) - green) <= tolerance,
+                       abs(Int(old & 0xFF) - blue) <= tolerance {
+                        continue
+                    }
+                    painted[cellIndex] = UInt32(glyph) << 24 | UInt32(red) << 16 | UInt32(green) << 8 | UInt32(blue)
+
+                    // Opaque characters, premultiplied: each pixel is the ink color times the glyph's coverage,
+                    // and the coverage itself as alpha. `(x * 0x8081) >> 23` is x / 255 for products of two bytes.
                     masks.alphas[glyph].withUnsafeBufferPointer { mask in
                         for y in 0..<masks.height {
                             var target = output + ((row * masks.height + y) * width + column * masks.width) * 4
-                            for x in 0..<masks.width {
-                                let coverage = Int(mask[y * masks.width + x])
-                                if coverage > 0 {
-                                    target[0] = UInt8(red * coverage / 255)
-                                    target[1] = UInt8(green * coverage / 255)
-                                    target[2] = UInt8(blue * coverage / 255)
-                                    target[3] = UInt8(alpha * coverage / 255)
-                                }
+                            var source = y * masks.width
+                            for _ in 0..<masks.width {
+                                let coverage = Int(mask[source])
+                                target[0] = UInt8((red * coverage * 0x8081) >> 23)
+                                target[1] = UInt8((green * coverage * 0x8081) >> 23)
+                                target[2] = UInt8((blue * coverage * 0x8081) >> 23)
+                                target[3] = UInt8(coverage)
                                 target += 4
+                                source += 1
                             }
                         }
                     }
                 }
             }
         }
-        guard let provider = CGDataProvider(data: pixels as CFData) else { return nil }
+        guard let provider = CGDataProvider(data: Data(canvas) as CFData) else { return nil }
         return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
-                       space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                       space: colors.space,
                        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
                        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
@@ -238,28 +268,93 @@ final class AsciiArtist {
         }
 
         // Push the cell's own contrast to the full range, then find the closest glyph shape.
-        let range = high - low
-        func score(_ glyph: Int) -> Float {
-            let shape = glyphs.shapes[glyph]
-            var distance: Float = 0
-            for index in 0..<GlyphSet.subCount {
-                let difference = shape[index] - (sub[index] - low) / range
-                distance += difference * difference
+        // This runs for every structured cell of every frame: plain buffers, no array checks.
+        let scale = 1 / (high - low)
+        let count = GlyphSet.subCount
+        return sub.withUnsafeBufferPointer { cell in
+            glyphs.flatShapes.withUnsafeBufferPointer { shapes in
+                glyphs.ink.withUnsafeBufferPointer { ink in
+                    func score(_ glyph: Int) -> Float {
+                        var distance: Float = 0
+                        let shape = glyph * count
+                        for index in 0..<count {
+                            let difference = shapes[shape + index] - (cell[index] - low) * scale
+                            distance += difference * difference
+                        }
+                        let toneMiss = ink[glyph] - level
+                        return distance + toneWeight * toneMiss * toneMiss
+                    }
+                    var best = 1, bestScore = Float.infinity
+                    // Index 0 is the space: a structured cell always gets ink.
+                    for glyph in 1..<ink.count {
+                        let candidate = score(glyph)
+                        if candidate < bestScore {
+                            best = glyph
+                            bestScore = candidate
+                        }
+                    }
+                    if kept > 0, kept != best, score(kept) <= bestScore * keepMargin { return kept }
+                    return best
+                }
             }
-            let toneMiss = glyphs.ink[glyph] - level
-            return distance + toneWeight * toneMiss * toneMiss
         }
-        var best = 1, bestScore = Float.infinity
-        // Index 0 is the space: a structured cell always gets ink.
-        for glyph in 1..<glyphs.shapes.count {
-            let candidate = score(glyph)
-            if candidate < bestScore {
-                best = glyph
-                bestScore = candidate
+    }
+}
+
+/// sRGB colors translated to a screen's color space, by table.
+///
+/// Handing the window server an sRGB bitmap made it convert every pixel of every frame to the screen's
+/// colors, which cost about half of the app's processor time. The art has one color per character, so the
+/// conversion is done here per character instead, through a table CoreGraphics fills once per screen.
+private struct ColorTable {
+    static let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
+
+    let space: CGColorSpace
+    /// `steps`³ entries of red, green, blue in the screen's space. Empty when the screen is sRGB already.
+    private let entries: [UInt8]
+    /// Levels per channel: steps of 4 out of 255, finer than the eye or `colorTolerance` can tell.
+    private static let steps = 64
+
+    init?(space: CGColorSpace) {
+        self.space = space
+        guard space != Self.sRGB else {
+            entries = []
+            return
+        }
+        // Every table color as one pixel of an sRGB image, drawn into a bitmap in the screen's space.
+        let steps = Self.steps, width = steps * steps, height = steps
+        var source = [UInt8](repeating: 255, count: width * height * 4)
+        for blue in 0..<steps {
+            for green in 0..<steps {
+                for red in 0..<steps {
+                    let index = (blue * width + green * steps + red) * 4
+                    source[index] = UInt8(red * 255 / (steps - 1))
+                    source[index + 1] = UInt8(green * 255 / (steps - 1))
+                    source[index + 2] = UInt8(blue * 255 / (steps - 1))
+                }
             }
         }
-        if kept > 0, kept != best, score(kept) <= bestScore * keepMargin { return kept }
-        return best
+        let info = CGImageAlphaInfo.noneSkipLast.rawValue
+        guard let provider = CGDataProvider(data: Data(source) as CFData),
+              let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+                                  space: Self.sRGB, bitmapInfo: CGBitmapInfo(rawValue: info), provider: provider,
+                                  decode: nil, shouldInterpolate: false, intent: .defaultIntent),
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                      space: space, bitmapInfo: info) else { return nil }
+        context.interpolationQuality = .none
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let data = context.data?.bindMemory(to: UInt8.self, capacity: width * height * 4) else { return nil }
+        // Both bitmaps store their top row first, so entries are found where they were put.
+        entries = Array(UnsafeBufferPointer(start: data, count: width * height * 4))
+    }
+
+    /// The bytes that show `color` (sRGB) on the screen.
+    func screenColor(for color: Samples.Color) -> (red: Int, green: Int, blue: Int) {
+        guard !entries.isEmpty else { return (Int(color.red * 255), Int(color.green * 255), Int(color.blue * 255)) }
+        let last = CGFloat(Self.steps - 1)
+        let red = Int((color.red * last).rounded()), green = Int((color.green * last).rounded()), blue = Int((color.blue * last).rounded())
+        let index = ((blue * Self.steps + green) * Self.steps + red) * 4
+        return (Int(entries[index]), Int(entries[index + 1]), Int(entries[index + 2]))
     }
 }
 
@@ -296,7 +391,9 @@ private struct Samples {
         // CGContext's origin is bottom-left; the view's is top-left.
         let toPixelsX = CGFloat(width) / gridSize.width
         let toPixelsY = CGFloat(height) / gridSize.height
-        context.interpolationQuality = .low
+        // Nearest neighbour: the frames are small and already blurred, and smooth resampling cost
+        // as much as everything else in this file together.
+        context.interpolationQuality = .none
         context.draw(image, in: CGRect(x: origin.x * toPixelsX,
                                        y: (gridSize.height - origin.y - drawn.height) * toPixelsY,
                                        width: drawn.width * toPixelsX, height: drawn.height * toPixelsY))

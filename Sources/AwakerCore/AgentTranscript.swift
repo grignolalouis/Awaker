@@ -176,8 +176,13 @@ public struct AgentSessionReader: Sendable {
         defer { try? handle.close() }
         let end = (try? handle.seekToEnd()) ?? 0
         let tail: UInt64 = 8_000
-        let lastLine = read(handle, from: end > tail ? end - tail : 0, length: tail).split(separator: "\n").last
-        return lastLine?.contains("[Request interrupted by user") == true
+        guard let lastLine = read(handle, from: end > tail ? end - tail : 0, length: tail).split(separator: "\n").last,
+              lastLine.contains("[Request interrupted by user"),
+              let entry = try? JSONSerialization.jsonObject(with: Data(lastLine.utf8)) as? [String: Any],
+              entry["type"] as? String == "user",
+              let content = (entry["message"] as? [String: Any])?["content"] as? [[String: Any]] else { return false }
+        // The notice itself, not a tool result or a reply that happens to quote it.
+        return content.contains { ($0["text"] as? String)?.hasPrefix("[Request interrupted by user") == true }
     }
 
     /// The shell commands each session is running, by session pid. Commands that only just started are left out:
@@ -185,8 +190,9 @@ public struct AgentSessionReader: Sendable {
     public static func runningCommands(of sessions: Set<Int32>, now: Date = Date()) -> [Int32: [RunningCommand]] {
         var commands: [Int32: [RunningCommand]] = [:]
         for child in ProcessTree.children(of: sessions) where now.timeIntervalSince(child.startedAt) >= commandMinimumAge {
-            guard let arguments = ProcessTree.arguments(of: child.pid), arguments.count >= 3, arguments[1] == "-c",
-                  let command = RunningCommand.userCommand(inShellScript: arguments[2]) else { continue }
+            // Whatever flags the shell was given, the script is the argument that sources Claude Code's snapshot.
+            guard let arguments = ProcessTree.arguments(of: child.pid),
+                  let command = arguments.dropFirst().lazy.compactMap(RunningCommand.userCommand(inShellScript:)).first else { continue }
             commands[child.parent, default: []].append(RunningCommand(id: child.pid, command: command, startedAt: child.startedAt))
         }
         return commands.mapValues { $0.sorted { $0.startedAt < $1.startedAt } }

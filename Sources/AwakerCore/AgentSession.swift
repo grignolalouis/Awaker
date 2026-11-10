@@ -141,7 +141,9 @@ public struct RunningCommand: Identifiable, Equatable, Sendable {
               let end = script.range(of: " && pwd -P >| ", options: .backwards),
               start.upperBound < end.lowerBound else { return nil }
         var command = String(script[start.upperBound..<end.lowerBound])
-        if command.hasSuffix(" < /dev/null") { command.removeLast(" < /dev/null".count) }
+        for redirect in [" < /dev/null", " \\< /dev/null", " </dev/null"] where command.hasSuffix(redirect) {
+            command.removeLast(redirect.count)
+        }
         // A command with spaces or special characters arrives single-quoted, its own quotes escaped.
         if command.count >= 2, command.hasPrefix("'"), command.hasSuffix("'") {
             command = String(command.dropFirst().dropLast())

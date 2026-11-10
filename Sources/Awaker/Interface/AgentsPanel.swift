@@ -53,7 +53,9 @@ struct AgentsPanel: View {
 
     /// Agents worth a row (anything going on, or finished recently), and how many older ones are left.
     private func split(_ agents: [AgentSession], now: Date) -> (recent: [AgentSession], older: Int) {
-        let recent = agents.filter { $0.state.isActive || now.timeIntervalSince($0.stateSince) < recentWindow }
+        let recent = agents.filter {
+            $0.state.isActive || !$0.subagents.isEmpty || !$0.commands.isEmpty || now.timeIntervalSince($0.stateSince) < recentWindow
+        }
         return (recent, agents.count - recent.count)
     }
 }
@@ -205,7 +207,10 @@ private struct DetailLine: View {
 
     private static func styled(_ text: String) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+        guard var styled = try? AttributedString(markdown: text, options: options) else { return AttributedString(text) }
+        // Links stay plain text: an agent's reply can quote anything, and this panel only shows, it opens nothing.
+        styled.link = nil
+        return styled
     }
 }
 

@@ -249,13 +249,16 @@ import Testing
         let file = try transcript([
             (id: "killed", meta: #"{"description":"Test helper"}"#, minutesAgo: 0),
             (id: "running", meta: #"{"description":"Review"}"#, minutesAgo: 0),
+            (id: "quoting", meta: #"{"description":"Read the code"}"#, minutesAgo: 0),
         ], now: now, lastLines: [
+            // A tool result that merely quotes the notice: this helper is still at work.
+            "quoting": #"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"contains(\"[Request interrupted by user\")"}]}}"#,
             "killed": #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}"#,
             "running": #"{"type":"assistant","message":{"content":[{"type":"text","text":"On it."}]}}"#,
         ])
         defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
 
-        #expect(AgentSessionReader().subagents(besideTranscript: file, now: now).map(\.id) == ["agent-running"])
+        #expect(Set(AgentSessionReader().subagents(besideTranscript: file, now: now).map(\.id)) == ["agent-running", "agent-quoting"])
     }
 
     @Test func aSessionWithoutHelpersHasNone() {
@@ -281,6 +284,11 @@ import Testing
     @Test func removesTheQuotesAroundACommand() {
         let script = prefix + #" && eval 'npm run test -- --grep '\''sync button'\''' < /dev/null && pwd -P >| /tmp/claude-1-cwd"#
         #expect(RunningCommand.userCommand(inShellScript: script) == "npm run test -- --grep 'sync button'")
+    }
+
+    @Test func toleratesAnEscapedRedirect() {
+        let script = prefix + #" && eval 'npm run dev' \< /dev/null && pwd -P >| /tmp/claude-1-cwd"#
+        #expect(RunningCommand.userCommand(inShellScript: script) == "npm run dev")
     }
 
     @Test func putsALongScriptOnOneShortLine() {
