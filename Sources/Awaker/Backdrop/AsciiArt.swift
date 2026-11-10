@@ -139,10 +139,10 @@ final class AsciiArtist {
     private let toneWeight: Float = 3
     /// A character from the previous frame is kept unless a new one beats it by this margin.
     private let keepMargin: Float = 1.12
-    /// Characters take the color of the pixels under them, a touch more saturated and lighter so they read
-    /// as ink on the dimmed image. Kept gentle: the generated scenes are vivid already, and a strong boost
-    /// turned them garish. No whitening: that is what washes the picture out.
-    private let saturation: CGFloat = 1.1
+    /// Characters take the color of the pixels under them, with less saturation (below 1 pulls a color
+    /// toward its own gray) and a little more light, so they read as soft ink on the dimmed image.
+    /// The owner found the picture's full colors too loud once the characters became opaque.
+    private let saturation: CGFloat = 0.6
     private let brightness: CGFloat = 1.3
     /// Fully opaque: the characters are the picture, the image behind only fills the gaps between them.
     private let baseOpacity: CGFloat = 1
@@ -217,7 +217,8 @@ final class AsciiArtist {
                        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
 
-    /// Pushes a color away from its own gray (more saturation), then brightens it, clamped to the displayable range.
+    /// Moves a color away from its own gray or toward it (`saturation` above or below 1), then brightens it,
+    /// clamped to the displayable range.
     private func vivid(_ color: Samples.Color) -> Samples.Color {
         let gray = 0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue
         func channel(_ value: CGFloat) -> CGFloat {
