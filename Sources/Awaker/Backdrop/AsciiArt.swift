@@ -17,11 +17,12 @@ struct GlyphSet {
     static let subRows = 5
     static let subCount = subColumns * subRows
 
-    /// Punctuation and symbols only: more graphic than letters and digits.
-    private static let characters: [Character] = Array(" .,:;'`\"^-_~=+*<>!?|/\\()[]{}#%@&$")
-    /// Classic density ramp for flat areas, from lightest to fullest. No space: every cell gets a character,
+    /// Symbols with enough ink to fill their cell. Dots, commas, quotes and dashes are left out: the owner
+    /// found they left the picture looking empty. The space stays first: the code relies on index 0 being blank.
+    private static let characters: [Character] = Array(" =+*<>|/\\()[]{}#%@&$")
+    /// Density ramp for flat areas, from lightest to fullest. No space: every cell gets a character,
     /// so the darkest parts of the picture are drawn too (in their own dark color) instead of left empty.
-    private static let rampCharacters: [Character] = Array(".:-=+*#%@")
+    private static let rampCharacters: [Character] = Array("+*#%&@")
 
     let cell: CGSize
     let font: NSFont
@@ -139,10 +140,9 @@ final class AsciiArtist {
     private let toneWeight: Float = 3
     /// A character from the previous frame is kept unless a new one beats it by this margin.
     private let keepMargin: Float = 1.12
-    /// Characters take the color of the pixels under them, with less saturation (below 1 pulls a color
-    /// toward its own gray) and a little more light, so they read as soft ink on the dimmed image.
-    /// The owner found the picture's full colors too loud once the characters became opaque.
-    private let saturation: CGFloat = 0.6
+    /// Characters take the color of the pixels under them, as it is (1 leaves saturation alone; the owner
+    /// tried 1.8, too loud, and 0.6, too dull), a little lighter so they read as ink on the dimmed image.
+    private let saturation: CGFloat = 1
     private let brightness: CGFloat = 1.3
     /// Fully opaque: the characters are the picture, the image behind only fills the gaps between them.
     private let baseOpacity: CGFloat = 1
