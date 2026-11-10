@@ -2,24 +2,73 @@ import AppKit
 import AVFoundation
 import SwiftUI
 
-/// The illustration behind the whole window (used with its author's permission), and its optional
-/// animated version: a short seamless loop made from the same image.
+/// One picture the window can sit on: a still (`<id>.jpg`) and, optionally, a short seamless loop made
+/// from it (`<id>.mp4`), both in the bundle's `Backdrop` folder. See `Assets/Backdrop/README.md`.
+struct BackdropScene: Identifiable, Equatable {
+    let id: String
+    let title: String
+    /// How much black is laid over the picture so the characters and the white text stand out. Bright scenes need more.
+    var dim = 0.2
+}
+
+/// The pictures behind the whole window. The user picks one in Settings.
 @MainActor
 enum Backdrop {
-    static let image: CGImage? = Bundle.main.url(forResource: "backdrop", withExtension: "jpg", subdirectory: "Backdrop")
-        .flatMap { NSImage(contentsOf: $0) }?
-        .cgImage(forProposedRect: nil, context: nil, hints: nil)
+    static let scenes = [
+        BackdropScene(id: "backdrop", title: "Meadow"),
+        BackdropScene(id: "beach", title: "Beach", dim: 0.32),
+        BackdropScene(id: "sunflowers", title: "Sunflowers", dim: 0.32),
+        BackdropScene(id: "wheat", title: "Wheat field", dim: 0.32),
+    ]
 
-    /// The loop and the artist are created once for the app's single window, not on every view update.
-    static let video = Bundle.main.url(forResource: "backdrop", withExtension: "mp4", subdirectory: "Backdrop")
-        .map(VideoLoop.init(url:))
+    /// The scene with this id, or the first one when the id is unknown (a scene removed by an update).
+    static func scene(_ id: String) -> BackdropScene {
+        scenes.first { $0.id == id } ?? scenes[0]
+    }
+
+    static func image(of scene: BackdropScene) -> CGImage? {
+        if let image = images[scene.id] { return image }
+        let image = url(scene, "jpg").flatMap { NSImage(contentsOf: $0) }?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        images[scene.id] = image
+        return image
+    }
+
+    /// The scene's loop. Only one is kept: a player holds on to a video decoder.
+    static func video(of scene: BackdropScene) -> VideoLoop? {
+        if let current = video, current.scene == scene.id { return current.loop }
+        video?.loop.pause()
+        video = url(scene, "mp4").map { (scene.id, VideoLoop(url: $0)) }
+        return video?.loop
+    }
+
+    /// A small version of the still, for the picker in Settings.
+    static func thumbnail(of scene: BackdropScene) -> CGImage? {
+        if let thumbnail = thumbnails[scene.id] { return thumbnail }
+        guard let image = image(of: scene) else { return nil }
+        let size = (width: 320, height: 320 * image.height / max(image.width, 1))
+        let context = CGContext(data: nil, width: size.width, height: size.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+        context?.interpolationQuality = .high
+        context?.draw(image, in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
+        let thumbnail = context?.makeImage()
+        thumbnails[scene.id] = thumbnail
+        return thumbnail
+    }
+
+    private static var images: [String: CGImage] = [:]
+    private static var thumbnails: [String: CGImage] = [:]
+    private static var video: (scene: String, loop: VideoLoop)?
+
+    private static func url(_ scene: BackdropScene, _ fileExtension: String) -> URL? {
+        Bundle.main.url(forResource: scene.id, withExtension: fileExtension, subdirectory: "Backdrop")
+    }
+
+    /// Created once for the app's single window, not on every view update.
     static let artist = AsciiArtist()
 
     /// Blur of the still image behind the characters, in points. The video has a matching blur baked in
     /// (radius 2.5 in its own pixels, see `Assets/Backdrop/README.md`): blurring a playing layer live costs too much.
     static let blurRadius: CGFloat = 3
-    /// Darkens the blurred image so the characters, drawn in the image's own colors, stand out as the picture.
-    static let dim = Color.black.opacity(0.2)
     /// Playback speed of the loop. Well under 1 so the scene stays calm.
     static let playbackRate: Float = 0.4
 }
@@ -32,14 +81,16 @@ struct BackdropView: View {
     @State private var isWindowVisible = true
     @State private var isScreenAwake = CGDisplayIsAsleep(CGMainDisplayID()) == 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(AppSettings.self) private var settings
 
     private var isAnimating: Bool { isWindowVisible && isScreenAwake && !reduceMotion }
 
     var body: some View {
+        let scene = Backdrop.scene(settings.backdrop)
+        let video = reduceMotion ? nil : Backdrop.video(of: scene)
         // GeometryReader takes exactly the offered size, so the overflowing image can't widen the layout.
         GeometryReader { proxy in
-            if let image = Backdrop.image {
-                let video = reduceMotion ? nil : Backdrop.video
+            if let image = Backdrop.image(of: scene) {
                 ZStack {
                     // The still stays underneath: it shows until the first video frame, and when motion is off.
                     Image(decorative: image, scale: 1)
@@ -51,22 +102,23 @@ struct BackdropView: View {
                     if let video {
                         VideoLoopView(video: video)
                     }
-                    Backdrop.dim
+                    Color.black.opacity(scene.dim)
                     AsciiArtView(size: proxy.size, isPaused: !isAnimating) { video?.currentFrame() ?? image }
                         .mask { WindowButtonsClearing() }
                 }
+                // A different scene is a different picture and player: start the views afresh.
+                .id(scene.id)
             } else {
                 Color.black
             }
         }
         .onChange(of: isAnimating, initial: true) { _, animating in
-            if animating {
-                Backdrop.video?.play()
-            } else {
-                Backdrop.video?.pause()
-            }
+            if animating { video?.play() } else { video?.pause() }
         }
-        .onDisappear { Backdrop.video?.pause() }
+        .onChange(of: scene) {
+            if isAnimating { video?.play() }
+        }
+        .onDisappear { video?.pause() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { notification in
             guard let window = notification.object as? NSWindow, window.styleMask.contains(.titled) else { return }
             isWindowVisible = window.occlusionState.contains(.visible)

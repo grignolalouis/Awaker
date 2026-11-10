@@ -4,3 +4,4 @@ build/
 *.dmg
 CLAUDE.md
 .claude/
+Assets/Backdrop/*-source.mp4

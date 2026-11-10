@@ -70,6 +70,41 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Background") {
+                HStack(spacing: 10) {
+                    ForEach(Backdrop.scenes) { scene in
+                        let isOn = Backdrop.scene(settings.backdrop) == scene
+                        Button {
+                            settings.backdrop = scene.id
+                        } label: {
+                            VStack(spacing: 6) {
+                                Color.clear
+                                    .aspectRatio(16 / 9, contentMode: .fit)
+                                    .overlay {
+                                        if let thumbnail = Backdrop.thumbnail(of: scene) {
+                                            Image(decorative: thumbnail, scale: 1)
+                                                .resizable()
+                                                .aspectRatio(contentMode: .fill)
+                                        }
+                                    }
+                                    .clipShape(.rect(cornerRadius: 10))
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .strokeBorder(isOn ? AnyShapeStyle(.tint) : AnyShapeStyle(.separator), lineWidth: isOn ? 3 : 1)
+                                    }
+                                Text(scene.title)
+                                    .font(.callout)
+                                    .foregroundStyle(isOn ? .primary : .secondary)
+                            }
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(isOn ? .isSelected : [])
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+
             Section {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 52), spacing: 8)], spacing: 8) {
                     ForEach(AvatarSkin.all) { skin in

@@ -3,7 +3,7 @@
 //
 // An optional Gaussian blur (radius in source pixels) is baked into the frames, so playback pays nothing for it.
 //
-// Usage: swift Scripts/make-loop.swift <input.mp4> <output.mp4> [blur radius]
+// Usage: swift Scripts/make-loop.swift <input.mp4> <output.mp4> [blur radius] [bits per second, default 8000000]
 import AVFoundation
 import CoreGraphics
 import CoreImage
@@ -16,6 +16,7 @@ guard arguments.count >= 3 else {
 let inputURL = URL(fileURLWithPath: arguments[1])
 let outputURL = URL(fileURLWithPath: arguments[2])
 let blurRadius = arguments.count > 3 ? Double(arguments[3]) ?? 0 : 0
+let bitRate = arguments.count > 4 ? Int(arguments[4]) ?? 8_000_000 : 8_000_000
 try? FileManager.default.removeItem(at: outputURL)
 
 let imageContext = CIContext()
@@ -68,7 +69,7 @@ Task {
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: Int(size.width),
             AVVideoHeightKey: Int(size.height),
-            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: 8_000_000],
+            AVVideoCompressionPropertiesKey: [AVVideoAverageBitRateKey: bitRate],
         ])
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,

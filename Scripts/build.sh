@@ -24,9 +24,11 @@ VERSION=$(tr -d '[:space:]' < VERSION)
 cp Assets/logo-mark.svg "$CONTENTS/Resources/"
 mkdir -p "$CONTENTS/Resources/Backdrop" "$CONTENTS/Resources/Skins"
 cp Assets/Skins/skins.json "$CONTENTS/Resources/Skins/"
-cp Assets/Backdrop/backdrop.jpg "$CONTENTS/Resources/Backdrop/"
-# Optional animated version of the backdrop (a short seamless loop).
-[[ -f Assets/Backdrop/backdrop.mp4 ]] && cp Assets/Backdrop/backdrop.mp4 "$CONTENTS/Resources/Backdrop/"
+# Each backdrop is a still (<name>.jpg) and, optionally, its seamless loop (<name>.mp4).
+# The clips the loops were made from (<name>-source.mp4) stay out of the app.
+for file in Assets/Backdrop/*.jpg Assets/Backdrop/*.mp4(N); do
+  [[ "$file" == *-source.mp4 ]] || cp "$file" "$CONTENTS/Resources/Backdrop/"
+done
 
 echo "→ Icon"
 swift Scripts/make-icon.swift Assets/logo-mark.svg build/AppIcon.iconset >/dev/null

@@ -22,6 +22,8 @@ final class AppSettings {
     /// Tell the user when a Claude Code session finishes or needs them.
     var agentNotifications: Bool { didSet { defaults.set(agentNotifications, forKey: Key.agentNotifications) } }
 
+    /// The picture behind the window: the id of a `BackdropScene`.
+    var backdrop: String { didSet { defaults.set(backdrop, forKey: Key.backdrop) } }
     /// Names of the avatar skins the user doesn't want agents to wear.
     var hiddenSkins: Set<String> { didSet { defaults.set(hiddenSkins.sorted(), forKey: Key.hiddenSkins) } }
 
@@ -39,6 +41,7 @@ final class AppSettings {
         static let notifications = "notifications"
         static let agentNotifications = "agentNotifications"
         static let hiddenSkins = "hiddenSkins"
+        static let backdrop = "backdrop"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -63,6 +66,7 @@ final class AppSettings {
         showElapsedInMenuBar = defaults.bool(forKey: Key.showElapsed)
         notifications = defaults.bool(forKey: Key.notifications)
         agentNotifications = defaults.bool(forKey: Key.agentNotifications)
+        backdrop = defaults.string(forKey: Key.backdrop) ?? Backdrop.scenes[0].id
         hiddenSkins = Set(defaults.stringArray(forKey: Key.hiddenSkins) ?? [])
     }
 
