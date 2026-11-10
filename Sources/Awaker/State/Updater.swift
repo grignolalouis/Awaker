@@ -32,8 +32,29 @@ final class Updater {
 
     private let checkInterval: TimeInterval = 24 * 3_600
 
+    /// The version whose banner the user closed. A newer one brings the banner back.
+    private var dismissedVersion: String? = UserDefaults.standard.string(forKey: "dismissedUpdate") {
+        didSet { UserDefaults.standard.set(dismissedVersion, forKey: "dismissedUpdate") }
+    }
+
     init(isPreview: Bool = false) {
         self.isPreview = isPreview
+        // Snapshots show the banner, with a release that is never downloaded.
+        if isPreview, let page = URL(string: "https://github.com/\(Self.repository)/releases/tag/v9.9.9"),
+           let release = AppRelease(latestReleasePage: page, repository: Self.repository) {
+            status = .available(release)
+        }
+    }
+
+    /// The release to announce on the home screen: the one available, unless the user closed its banner.
+    /// Settings and the menu keep offering it either way.
+    var bannerRelease: AppRelease? {
+        guard let release = availableRelease, release.version != dismissedVersion else { return nil }
+        return release
+    }
+
+    func dismissBanner() {
+        dismissedVersion = availableRelease?.version
     }
 
     var currentVersion: String {

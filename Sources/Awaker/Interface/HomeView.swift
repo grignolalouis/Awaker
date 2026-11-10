@@ -5,6 +5,7 @@ import SwiftUI
 struct HomeView: View {
     @Environment(AwakeController.self) private var awake
     @Environment(AgentMonitor.self) private var monitor
+    @Environment(Updater.self) private var updater
 
     private let glassSpacing: CGFloat = 12
     private let agentsWidth: CGFloat = 680
@@ -25,6 +26,11 @@ struct HomeView: View {
                             .padding(.vertical, 10)
                             .glassEffect()
                     }
+                }
+            }
+            if let release = updater.bannerRelease {
+                UpdateBanner(release: release, install: { Task { await updater.install(release) } }) {
+                    withAnimation { updater.dismissBanner() }
                 }
             }
             if let recap = monitor.recap {
@@ -175,5 +181,34 @@ private struct ReadinessPill: View {
         if monitor.waitingCount > 0 { return Format.plural(monitor.waitingCount, "agent needs you", "agents need you") }
         if monitor.busyCount > 0 { return Format.plural(monitor.busyCount, "agent working", "agents working") }
         return monitor.agents.isEmpty ? "No agents" : Format.plural(monitor.agents.count, "agent idle", "agents idle")
+    }
+}
+
+/// A new version is available: one glass line to install it, or to close until the next one.
+private struct UpdateBanner: View {
+    let release: AppRelease
+    let install: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.down.circle.fill")
+                .foregroundStyle(.tint)
+            Text("Awaker \(release.version) is available")
+                .lineLimit(1)
+            Button("Install", action: install)
+                .buttonStyle(.glassProminent)
+                .controlSize(.small)
+                .help("Installing relaunches Awaker and stops the running session.")
+            Button("Dismiss", systemImage: "xmark", action: dismiss)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Hide until the next version. The update stays available in Settings.")
+        }
+        .font(.callout)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .glassEffect()
     }
 }
