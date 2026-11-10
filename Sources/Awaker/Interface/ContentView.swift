@@ -25,7 +25,7 @@ enum Screen: String, CaseIterable, Identifiable {
 /// The window: the illustration edge to edge, one screen on top, and a native toolbar picker to switch.
 /// Everything is Apple's own components; the Liquid Glass comes from the system.
 struct ContentView: View {
-    static let defaultSize = CGSize(width: 880, height: 620)
+    static let defaultSize = CGSize(width: 1020, height: 720)
     private let minimumSize = CGSize(width: 680, height: 520)
 
     @State private var screen: Screen = .home

@@ -70,6 +70,44 @@ struct SettingsView: View {
                 }
             }
 
+            Section {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 52), spacing: 8)], spacing: 8) {
+                    ForEach(AvatarSkin.all) { skin in
+                        let isOn = !settings.hiddenSkins.contains(skin.name)
+                        Button {
+                            if isOn { settings.hiddenSkins.insert(skin.name) } else { settings.hiddenSkins.remove(skin.name) }
+                        } label: {
+                            AgentAvatar(pose: .standing, fixedSkin: skin)
+                                .opacity(isOn ? 1 : 0.3)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .background(.quaternary.opacity(isOn ? 1 : 0.4), in: .rect(cornerRadius: 10))
+                                .overlay(alignment: .bottomTrailing) {
+                                    Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                                        .font(.caption)
+                                        .foregroundStyle(isOn ? AnyShapeStyle(.green) : AnyShapeStyle(.tertiary))
+                                        .padding(3)
+                                }
+                                .contentShape(.rect(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                        .help(skin.name)
+                        .accessibilityLabel(skin.name)
+                        .accessibilityAddTraits(isOn ? .isSelected : [])
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: {
+                HStack {
+                    Text("Avatars")
+                    Spacer()
+                    Button("All") { settings.hiddenSkins = [] }
+                    Button("None") { settings.hiddenSkins = Set(AvatarSkin.all.map(\.name)) }
+                }
+                .controlSize(.small)
+            } footer: {
+                Text("Each agent wears one of the selected avatars. \(AvatarSkin.all.count - settings.hiddenSkins.count) of \(AvatarSkin.all.count) selected.")
+            }
+
             Section("System") {
                 Toggle("Show duration in the menu bar", isOn: $settings.showElapsedInMenuBar)
                 Toggle(isOn: $settings.notifications) {

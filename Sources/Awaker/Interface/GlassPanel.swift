@@ -4,7 +4,7 @@ import SwiftUI
 enum PanelMetrics {
     static let radius: CGFloat = 24
     /// Widest a panel of text gets.
-    static let maxWidth: CGFloat = 620
+    static let maxWidth: CGFloat = 720
     static let rowInset: CGFloat = 18
     static let rowPadding: CGFloat = 10
     static let edgePadding: CGFloat = 6

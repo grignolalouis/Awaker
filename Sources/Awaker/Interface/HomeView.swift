@@ -7,7 +7,7 @@ struct HomeView: View {
     @Environment(AgentMonitor.self) private var monitor
 
     private let glassSpacing: CGFloat = 12
-    private let agentsWidth: CGFloat = 560
+    private let agentsWidth: CGFloat = 680
 
     var body: some View {
         VStack(spacing: 28) {

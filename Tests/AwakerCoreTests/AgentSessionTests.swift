@@ -207,6 +207,92 @@ import Testing
     }
 }
 
+@Suite struct SubAgentTests {
+    /// A transcript with a `subagents` folder next to it, holding one pair of files per entry.
+    private func transcript(_ agents: [(id: String, meta: String?, minutesAgo: Double)], now: Date) throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let folder = root.appendingPathComponent("session/subagents")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for agent in agents {
+            let file = folder.appendingPathComponent("agent-\(agent.id).jsonl")
+            try Data("{}\n".utf8).write(to: file)
+            try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-agent.minutesAgo * 60)], ofItemAtPath: file.path)
+            if let meta = agent.meta {
+                try Data(meta.utf8).write(to: folder.appendingPathComponent("agent-\(agent.id).meta.json"))
+            }
+        }
+        return root.appendingPathComponent("session.jsonl")
+    }
+
+    @Test func keepsOnlyHelpersStillAtWork() throws {
+        let now = Date()
+        let file = try transcript([
+            (id: "running", meta: #"{"description":"Review the migration"}"#, minutesAgo: 1),
+            (id: "done", meta: #"{"description":"Design skins","finished":true}"#, minutesAgo: 1),
+            // Never marked finished, but silent for hours: its session died.
+            (id: "dead", meta: #"{"description":"Old"}"#, minutesAgo: 300),
+            (id: "unknown", meta: nil, minutesAgo: 1),
+            (id: "unnamed", meta: "{}", minutesAgo: 2),
+        ], now: now)
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+
+        let agents = AgentSessionReader().subagents(besideTranscript: file, now: now)
+
+        #expect(Set(agents.map(\.id)) == ["agent-running", "agent-unnamed"])
+        #expect(agents.first { $0.id == "agent-running" }?.task == "Review the migration")
+        #expect(agents.first { $0.id == "agent-unnamed" }?.task == "Sub-agent")
+    }
+
+    @Test func aSessionWithoutHelpersHasNone() {
+        #expect(AgentSessionReader().subagents(besideTranscript: URL(fileURLWithPath: "/nonexistent/s.jsonl")).isEmpty)
+    }
+
+    @Test func theStatusLineCountsHelpers() {
+        var agent = AgentSession(id: "a", pid: 1, directory: URL(fileURLWithPath: "/tmp"), name: "a", state: .working, stateSince: Date())
+        #expect(agent.statusLabel == "Working")
+        agent.subagents = [SubAgent(id: "1", task: "x"), SubAgent(id: "2", task: "y")]
+        #expect(agent.statusLabel == "Working · 2 sub-agents")
+    }
+}
+
+@Suite struct RunningCommandTests {
+    private let prefix = "source /Users/me/.claude/shell-snapshots/snapshot-zsh-1.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB 2>/dev/null || true"
+
+    @Test func findsTheCommandInClaudeCodesShellScript() {
+        let script = prefix + " && eval /tmp/watch/alexis.sh < /dev/null && pwd -P >| /tmp/claude-235e-cwd"
+        #expect(RunningCommand.userCommand(inShellScript: script) == "/tmp/watch/alexis.sh")
+    }
+
+    @Test func removesTheQuotesAroundACommand() {
+        let script = prefix + #" && eval 'npm run test -- --grep '\''sync button'\''' < /dev/null && pwd -P >| /tmp/claude-1-cwd"#
+        #expect(RunningCommand.userCommand(inShellScript: script) == "npm run test -- --grep 'sync button'")
+    }
+
+    @Test func putsALongScriptOnOneShortLine() {
+        let body = "for i in 1 2 3; do\n  " + String(repeating: "echo hello; ", count: 30) + "\ndone"
+        let command = RunningCommand.userCommand(inShellScript: prefix + " && eval '\(body)' < /dev/null && pwd -P >| /tmp/c")
+        #expect(command?.hasPrefix("for i in 1 2 3; do echo hello;") == true)
+        #expect(command?.hasSuffix("…") == true)
+    }
+
+    @Test func ignoresShellsThatAreNotClaudeCodes() {
+        #expect(RunningCommand.userCommand(inShellScript: "npm run dev && eval foo && pwd -P >| /tmp/x") == nil)
+        #expect(RunningCommand.userCommand(inShellScript: prefix) == nil)
+    }
+
+    @Test func readsTheArgumentsOfARunningProcess() throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        process.arguments = ["30"]
+        try process.run()
+        defer { process.terminate() }
+
+        #expect(ProcessTree.arguments(of: process.processIdentifier) == ["/bin/sleep", "30"])
+        let me = ProcessInfo.processInfo.processIdentifier
+        #expect(ProcessTree.children(of: [me]).contains { $0.pid == process.processIdentifier && $0.parent == me })
+    }
+}
+
 @Suite struct FormatDollarsTests {
     @Test func dollars() {
         #expect(Format.dollars(26.494) == "$26.49")

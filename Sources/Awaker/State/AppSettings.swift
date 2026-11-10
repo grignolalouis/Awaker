@@ -22,6 +22,9 @@ final class AppSettings {
     /// Tell the user when a Claude Code session finishes or needs them.
     var agentNotifications: Bool { didSet { defaults.set(agentNotifications, forKey: Key.agentNotifications) } }
 
+    /// Names of the avatar skins the user doesn't want agents to wear.
+    var hiddenSkins: Set<String> { didSet { defaults.set(hiddenSkins.sorted(), forKey: Key.hiddenSkins) } }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     private enum Key {
@@ -35,6 +38,7 @@ final class AppSettings {
         static let showElapsed = "showElapsed"
         static let notifications = "notifications"
         static let agentNotifications = "agentNotifications"
+        static let hiddenSkins = "hiddenSkins"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -59,6 +63,7 @@ final class AppSettings {
         showElapsedInMenuBar = defaults.bool(forKey: Key.showElapsed)
         notifications = defaults.bool(forKey: Key.notifications)
         agentNotifications = defaults.bool(forKey: Key.agentNotifications)
+        hiddenSkins = Set(defaults.stringArray(forKey: Key.hiddenSkins) ?? [])
     }
 
     var defaultDuration: TimeInterval? { Self.duration(minutes: defaultMinutes) }

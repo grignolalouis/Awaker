@@ -85,9 +85,14 @@ final class AgentMonitor {
         // File reads happen off the main thread; transcripts can be large.
         let (sessions, newCache) = await Task.detached(priority: .utility) {
             var cache = known
-            let sessions = reader.sessions().map { session -> AgentSession in
+            let found = reader.sessions()
+            let commands = AgentSessionReader.runningCommands(of: Set(found.map(\.pid)))
+            let sessions = found.map { session -> AgentSession in
                 var session = session
-                session.details = Self.details(of: session, reader: reader, cache: &cache)
+                let transcript = reader.transcript(of: session)
+                session.details = Self.details(of: session, transcript: transcript, reader: reader, cache: &cache)
+                session.subagents = transcript.map { reader.subagents(besideTranscript: $0) } ?? []
+                session.commands = commands[session.pid] ?? []
                 return session
             }
             return (sessions, cache.filter { entry in sessions.contains { $0.id == entry.key } })
@@ -101,10 +106,10 @@ final class AgentMonitor {
     }
 
     /// The session's details, re-read only when its transcript changed.
-    private nonisolated static func details(of session: AgentSession, reader: AgentSessionReader,
+    private nonisolated static func details(of session: AgentSession, transcript: URL?, reader: AgentSessionReader,
                                             cache: inout [String: CachedDetails]) -> AgentDetails {
         let cached = cache[session.id]
-        guard let transcript = reader.transcript(of: session) else { return cached?.details ?? AgentDetails() }
+        guard let transcript else { return cached?.details ?? AgentDetails() }
         let modified = (try? transcript.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
         if let cached, cached.modified == modified { return cached.details }
 

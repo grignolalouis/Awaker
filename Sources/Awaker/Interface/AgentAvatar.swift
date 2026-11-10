@@ -3,6 +3,7 @@ import SwiftUI
 /// The Claude Code mascot, showing what an agent is doing: trotting while it works, hopping when it
 /// needs you, standing still when it is done, asleep and dimmed when it idles. Each agent wears its
 /// own accessory, so sessions can be told apart at a glance.
+/// Its sub-agents at work trot around it as small bare mascots.
 /// The mascot is Anthropic's; it is redrawn here from the block art Claude Code prints at startup.
 struct AgentAvatar: View {
     enum Pose {
@@ -11,17 +12,24 @@ struct AgentAvatar: View {
 
     let pose: Pose
     /// Picks the accessory. The same seed always gives the same one.
-    let seed: String
+    var seed = ""
+    /// Shows this skin whatever the seed and the user's choice. For the showcase in Settings.
+    var fixedSkin: AvatarSkin?
+    /// How many sub-agents are at work for this agent.
+    var companions = 0
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(AppSettings.self) private var settings
 
     private let size = CGSize(width: 32, height: 25)
     private let frameInterval = 0.35
     /// Claude's orange.
     private let orange = Color(red: 0.85, green: 0.47, blue: 0.34)
+    /// A lighter shade for the small mascots, so they stand out in front of the big one.
+    private let lightOrange = Color(red: 0.96, green: 0.66, blue: 0.52)
 
     var body: some View {
-        let skin = AvatarSkin.pick(seed: seed)
+        let skin = fixedSkin ?? AvatarSkin.pick(seed: seed, hidden: settings.hiddenSkins)
         TimelineView(.animation(minimumInterval: frameInterval, paused: !isAnimated)) { timeline in
             let step = isAnimated ? Int(timeline.date.timeIntervalSinceReferenceDate / frameInterval) : 0
             let isAsleep = pose == .asleep
@@ -43,13 +51,28 @@ struct AgentAvatar: View {
             .frame(width: size.width, height: size.height)
             .opacity(isAsleep ? 0.6 : 1)
             .offset(y: lift(step: step))
+            // Drawn in the same timeline as the mascot: one timer per row, however many helpers there are.
+            .overlay {
+                ForEach(0..<min(companions, Self.companionSpots.count), id: \.self) { index in
+                    let stepping = isAnimated && (step + index).isMultiple(of: 2)
+                    PixelSprite(rows: stepping ? Sprite.stepping : Sprite.standing)
+                        .fill(lightOrange)
+                        .frame(width: companionSize.width, height: companionSize.height)
+                        .offset(x: Self.companionSpots[index].x, y: Self.companionSpots[index].y + (stepping ? -1 : 0))
+                }
+            }
         }
         .accessibilityHidden(true)
     }
 
+    private let companionSize = CGSize(width: 15, height: 12)
+    /// Where the small mascots stand, from the mascot's centre: in front of its feet on both sides, then by its head.
+    /// On the left they spill into the row's margin; on the right they must stay clear of the text.
+    private static let companionSpots: [CGPoint] = [CGPoint(x: 16, y: 10), CGPoint(x: -18, y: 10), CGPoint(x: -20, y: -8)]
+
     /// Only agents that are doing something animate; the others are drawn once.
     private var isAnimated: Bool {
-        !reduceMotion && (pose == .working || pose == .waiting)
+        !reduceMotion && (pose == .working || pose == .waiting || companions > 0)
     }
 
     /// A small sign next to the mascot: asleep, or asking for you.
@@ -81,7 +104,9 @@ struct AgentAvatar: View {
 
 /// What an agent's mascot wears: colored layers on the mascot's grid (`#` is ink).
 /// Skins live in `Assets/Skins/skins.json`; preview them with `Scripts/preview-skins.swift`.
-struct AvatarSkin: Decodable {
+struct AvatarSkin: Decodable, Identifiable {
+    var id: String { name }
+
     struct Layer: Decodable {
         let color: String
         let rows: [String]
@@ -100,7 +125,7 @@ struct AvatarSkin: Decodable {
     private static let plain = AvatarSkin(name: "plain", layers: [])
 
     /// The bundled skins. Empty when the file is missing or invalid: mascots then go bare.
-    private static let all: [AvatarSkin] = {
+    static let all: [AvatarSkin] = {
         guard let url = Bundle.main.url(forResource: "skins", withExtension: "json", subdirectory: "Skins"),
               let data = try? Data(contentsOf: url),
               let skins = try? JSONDecoder().decode([AvatarSkin].self, from: data) else { return [] }
@@ -108,10 +133,16 @@ struct AvatarSkin: Decodable {
     }()
 
     /// The same seed always gets the same skin, across launches (not `hashValue`, which changes per process).
-    static func pick(seed: String) -> AvatarSkin {
+    /// Skins the user unchecked are skipped: the agent takes the next one in the list, so hiding a skin
+    /// only changes the agents that wore it. With every skin hidden, mascots go bare.
+    static func pick(seed: String, hidden: Set<String> = []) -> AvatarSkin {
         guard !all.isEmpty else { return plain }
         let sum = seed.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0xFFFF }
-        return all[sum % all.count]
+        for offset in 0..<all.count {
+            let skin = all[(sum + offset) % all.count]
+            if !hidden.contains(skin.name) { return skin }
+        }
+        return plain
     }
 }
 

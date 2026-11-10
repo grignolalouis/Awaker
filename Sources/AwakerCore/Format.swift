@@ -79,11 +79,12 @@ public extension EndReason {
 public extension AgentSession {
     /// What the agent is doing, in a few words.
     var statusLabel: String {
+        let helpers = subagents.isEmpty ? "" : " · " + Format.plural(subagents.count, "sub-agent", "sub-agents")
         switch state {
-        case .working: "Working"
-        case .waiting(let tool): tool.map { "Asking permission: \($0)" } ?? "Waiting for your answer"
-        case .finished: "Finished"
-        case .background: "Background command running"
+        case .working: return "Working" + helpers
+        case .waiting(let tool): return tool.map { "Asking permission: \($0)" } ?? "Waiting for your answer"
+        case .finished: return subagents.isEmpty ? "Finished" : Format.plural(subagents.count, "sub-agent working", "sub-agents working")
+        case .background: return "Background command running" + helpers
         }
     }
 

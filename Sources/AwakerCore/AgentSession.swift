@@ -104,6 +104,56 @@ public struct AgentDetails: Equatable, Sendable {
     }
 }
 
+/// A helper agent started by a session, still at work.
+public struct SubAgent: Identifiable, Equatable, Sendable {
+    public let id: String
+    /// What it was asked to do, in a few words ("Review the migration").
+    public let task: String
+
+    public init(id: String, task: String) {
+        self.id = id
+        self.task = task
+    }
+}
+
+/// A shell command a session is running right now.
+public struct RunningCommand: Identifiable, Equatable, Sendable {
+    /// The shell's process id.
+    public let id: Int32
+    public let command: String
+    public let startedAt: Date
+
+    public init(id: Int32, command: String, startedAt: Date) {
+        self.id = id
+        self.command = command
+        self.startedAt = startedAt
+    }
+
+    /// Longest command kept, in characters.
+    private static let lengthLimit = 160
+
+    /// The command inside the script Claude Code hands to a shell, which looks like
+    /// `source <snapshot> … && eval <command> < /dev/null && pwd -P >| <file>`.
+    /// Nil for anything else: a shell that isn't Claude Code's, or a wrapper that changed shape.
+    public static func userCommand(inShellScript script: String) -> String? {
+        guard script.contains("/shell-snapshots/"),
+              let start = script.range(of: " && eval "),
+              let end = script.range(of: " && pwd -P >| ", options: .backwards),
+              start.upperBound < end.lowerBound else { return nil }
+        var command = String(script[start.upperBound..<end.lowerBound])
+        if command.hasSuffix(" < /dev/null") { command.removeLast(" < /dev/null".count) }
+        // A command with spaces or special characters arrives single-quoted, its own quotes escaped.
+        if command.count >= 2, command.hasPrefix("'"), command.hasSuffix("'") {
+            command = String(command.dropFirst().dropLast())
+                .replacingOccurrences(of: "'\\''", with: "'")
+                .replacingOccurrences(of: "'\"'\"'", with: "'")
+        }
+        let line = command.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !line.isEmpty else { return nil }
+        return line.count > lengthLimit ? String(line.prefix(lengthLimit)) + "…" : line
+    }
+}
+
 /// One running Claude Code session, as described by its status file and its transcript.
 public struct AgentSession: Identifiable, Equatable, Sendable {
     public let id: String
@@ -116,6 +166,10 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
     /// When Claude Code says the session's process started. Used to tell it from another process reusing its pid.
     public let startedAt: Date?
     public var details: AgentDetails
+    /// Helper agents it started that are still at work.
+    public var subagents: [SubAgent] = []
+    /// Shell commands it is running right now.
+    public var commands: [RunningCommand] = []
 
     public init(id: String, pid: Int32, directory: URL, name: String, state: AgentState, stateSince: Date,
                 startedAt: Date? = nil, details: AgentDetails = AgentDetails()) {
@@ -202,6 +256,48 @@ public enum ProcessTree {
     public static func startTime(of pid: Int32) -> Date? {
         guard let start = info(of: pid)?.kp_proc.p_starttime else { return nil }
         return Date(timeIntervalSince1970: Double(start.tv_sec) + Double(start.tv_usec) / 1_000_000)
+    }
+
+    /// The processes started directly by any of `parents`.
+    public static func children(of parents: Set<Int32>) -> [(pid: Int32, parent: Int32, startedAt: Date)] {
+        guard !parents.isEmpty else { return [] }
+        var name: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
+        var size = 0
+        guard sysctl(&name, UInt32(name.count), nil, &size, nil, 0) == 0 else { return [] }
+        // Processes may appear between the two calls: leave some room.
+        let stride = MemoryLayout<kinfo_proc>.stride
+        var processes = [kinfo_proc](repeating: kinfo_proc(), count: size / stride + 32)
+        size = processes.count * stride
+        guard sysctl(&name, UInt32(name.count), &processes, &size, nil, 0) == 0 else { return [] }
+        return processes.prefix(size / stride).compactMap { process in
+            let parent = process.kp_eproc.e_ppid
+            guard parents.contains(parent) else { return nil }
+            let start = process.kp_proc.p_starttime
+            return (process.kp_proc.p_pid, parent,
+                    Date(timeIntervalSince1970: Double(start.tv_sec) + Double(start.tv_usec) / 1_000_000))
+        }
+    }
+
+    /// A process's command line, argument by argument. Nil when it can't be read (gone, or another user's).
+    public static func arguments(of pid: Int32) -> [String]? {
+        var name: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&name, UInt32(name.count), nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return nil }
+        var buffer = [UInt8](repeating: 0, count: size)
+        guard sysctl(&name, UInt32(name.count), &buffer, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return nil }
+        // Layout: the argument count, the executable's path, padding, then the arguments, each ended by a zero.
+        let count = buffer.withUnsafeBytes { $0.loadUnaligned(as: Int32.self) }
+        var index = MemoryLayout<Int32>.size
+        while index < size, buffer[index] != 0 { index += 1 }
+        while index < size, buffer[index] == 0 { index += 1 }
+        var arguments: [String] = []
+        while arguments.count < Int(count), index < size {
+            let start = index
+            while index < size, buffer[index] != 0 { index += 1 }
+            arguments.append(String(decoding: buffer[start..<index], as: UTF8.self))
+            index += 1
+        }
+        return arguments
     }
 
     private static func info(of pid: Int32) -> kinfo_proc? {

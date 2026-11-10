@@ -1,6 +1,6 @@
 #!/bin/zsh
-# Builds Awaker.app and packs it into build/Awaker.dmg for sharing:
-# the app, a shortcut to /Applications to drag it onto, and first-launch instructions.
+# Builds Awaker.app and packs it into build/Awaker.dmg for sharing. Opening it shows the app on the left,
+# the Applications folder on the right and an arrow between them (layout in Scripts/dmg-settings.py).
 #
 # The app is signed ad hoc (no Apple Developer ID), so macOS asks each recipient to allow it once.
 set -euo pipefail
@@ -8,14 +8,17 @@ cd "$(dirname "$0")/.."
 
 Scripts/build.sh
 
-STAGING=build/dmg
-DMG=build/Awaker.dmg
-rm -rf "$STAGING" "$DMG"
-mkdir -p "$STAGING"
-cp -R build/Awaker.app "$STAGING/"
-ln -s /Applications "$STAGING/Applications"
-cp Resources/Read-me.txt "$STAGING/"
+# dmgbuild lays out the window without scripting Finder. It lives in its own Python environment,
+# outside build/ (which each build erases).
+TOOLS=.build/dmg-tools
+if [[ ! -x "$TOOLS/bin/dmgbuild" ]]; then
+  python3 -m venv "$TOOLS"
+  "$TOOLS/bin/pip" install --quiet dmgbuild==1.6.7
+fi
 
-hdiutil create -volname "Awaker" -srcfolder "$STAGING" -ov -format UDZO "$DMG" >/dev/null
-rm -rf "$STAGING"
+DMG=build/Awaker.dmg
+rm -f "$DMG"
+"$TOOLS/bin/dmgbuild" -s Scripts/dmg-settings.py \
+  -D app=build/Awaker.app -D background=Assets/dmg-background.png \
+  "Awaker" "$DMG" >/dev/null
 echo "✓ $DMG ($(du -h "$DMG" | cut -f1 | tr -d ' '))"

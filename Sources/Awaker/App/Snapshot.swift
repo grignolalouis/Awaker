@@ -25,6 +25,10 @@ enum SnapshotRunner {
         show(.settings)
         await pause()
         capture(directory, "4-settings")
+        // Tall enough to show the whole form, avatars included.
+        window?.setFrame(NSRect(origin: .zero, size: CGSize(width: ContentView.defaultSize.width, height: 1_700)), display: true)
+        await pause()
+        capture(directory, "5-settings-whole")
         exit(0)
     }
 

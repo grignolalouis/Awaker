@@ -5,7 +5,7 @@ import SwiftUI
 /// A row opens to show the last exchange, the cost, and how to get to that agent.
 struct AgentsPanel: View {
     @Environment(AgentMonitor.self) private var monitor
-    @State private var expandedID: String?
+    @State private var expandedID: String? = AppEnvironment.shared.isSnapshot ? DemoData.expandedAgent : nil
 
     /// Width of the avatar plus its gap, so separators and details start under the text.
     private let avatarColumn: CGFloat = 44
@@ -82,7 +82,7 @@ private struct AgentRow: View {
 
     private var summary: some View {
         HStack(spacing: 0) {
-            AgentAvatar(pose: pose, seed: agent.id)
+            AgentAvatar(pose: pose, seed: agent.id, companions: agent.subagents.count)
                 .frame(width: avatarColumn, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(agent.displayTitle)
@@ -90,11 +90,17 @@ private struct AgentRow: View {
                 Text("\(agent.projectName) · \(agent.statusLabel)")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                // While something is going on, say what was asked.
-                if !isExpanded, agent.state.isActive, let prompt = agent.details.lastPrompt {
-                    Text("“\(prompt)”")
-                        .font(.callout)
-                        .foregroundStyle(.tertiary)
+                // While something is going on, say what: the command that runs, or what was asked.
+                if !isExpanded, agent.state.isActive {
+                    if agent.state == .background, let command = agent.commands.first {
+                        Text(command.command)
+                            .font(.callout.monospaced())
+                            .foregroundStyle(.tertiary)
+                    } else if let prompt = agent.details.lastPrompt {
+                        Text("“\(prompt)”")
+                            .font(.callout)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             }
             .lineLimit(1)
@@ -121,6 +127,17 @@ private struct AgentRow: View {
             }
             if let reply = agent.details.lastReply ?? agent.details.summary {
                 DetailLine(label: "Its reply", text: reply, lines: 4)
+            }
+            if !agent.subagents.isEmpty {
+                DetailList(label: Format.plural(agent.subagents.count, "sub-agent at work", "sub-agents at work"),
+                           items: agent.subagents.map { (id: $0.id, text: $0.task, note: nil) })
+            }
+            if !agent.commands.isEmpty {
+                DetailList(label: Format.plural(agent.commands.count, "command running", "commands running"),
+                           items: agent.commands.map {
+                               (id: String($0.id), text: $0.command, note: Format.duration(now.timeIntervalSince($0.startedAt)))
+                           },
+                           isCode: true)
             }
             if let cost = agent.details.cost {
                 Text("≈ \(Format.dollars(cost.dollars)) · \(Format.duration(cost.modelTime)) of compute · +\(cost.linesAdded) −\(cost.linesRemoved) lines")
@@ -176,10 +193,56 @@ private struct DetailLine: View {
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text(text)
+            // Agents write Markdown: bold and code are shown as such, not as stars and backticks.
+            // Not selectable: a selectable text seems to drop its line limit once clicked, and then runs over
+            // the rows below (seen in use, not reproduced in snapshots).
+            Text(Self.styled(text))
                 .font(.callout)
                 .lineLimit(lines)
-                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private static func styled(_ text: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+    }
+}
+
+/// A small label over a short list: one line per item, with an optional note at the end of the line.
+private struct DetailList: View {
+    let label: String
+    let items: [(id: String, text: String, note: String?)]
+    var isCode = false
+
+    /// Longer lists end with a count.
+    private let shown = 4
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ForEach(items.prefix(shown), id: \.id) { item in
+                HStack(spacing: 8) {
+                    Text(item.text)
+                        .font(isCode ? .callout.monospaced() : .callout)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if let note = item.note {
+                        Spacer(minLength: 8)
+                        Text(note)
+                            .font(.callout)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if items.count > shown {
+                Text("and \(items.count - shown) more")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

@@ -6,6 +6,8 @@ import Foundation
 // - `~/.claude/projects/<project>/<sessionId>.jsonl`: the transcript, one JSON entry per line.
 //   Entries used here: `ai-title`, `last-prompt`, `system` with subtype `away_summary`,
 //   `cost-state`, and `assistant` messages (text and tool_use blocks).
+// - `~/.claude/projects/<project>/<sessionId>/subagents/agent-<id>.jsonl` and `.meta.json`: one pair per
+//   helper agent the session started. The meta file holds `description`, and `finished: true` once it is done.
 
 /// Extracts a session's details from the lines of its transcript.
 public enum TranscriptParser {
@@ -92,6 +94,8 @@ public struct AgentSessionReader: Sendable {
     /// How far back the one-off search for a session's cost may go, and in which steps.
     private let costSearchLimit: UInt64 = 64_000_000
     private let costSearchStep: UInt64 = 4_000_000
+    /// A helper agent that wrote nothing for this long is no longer counted as running.
+    private let subagentSilenceLimit: TimeInterval = 30 * 60
 
     public init(claudeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")) {
         sessionsDirectory = claudeDirectory.appendingPathComponent("sessions")
@@ -140,6 +144,42 @@ public struct AgentSessionReader: Sendable {
         return nil
     }
 
+    /// The helper agents of a session that are still at work, oldest first.
+    /// One whose transcript has not moved for a long while is taken for dead (its session crashed, or it was
+    /// stopped without a word): better a missing mascot than a phantom one.
+    public func subagents(besideTranscript transcript: URL, now: Date = Date()) -> [SubAgent] {
+        let directory = transcript.deletingPathExtension().appendingPathComponent("subagents")
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .creationDateKey]
+        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: Array(keys))) ?? []
+        return files
+            .filter { $0.pathExtension == "jsonl" }
+            .compactMap { file -> (agent: SubAgent, created: Date)? in
+                guard let values = try? file.resourceValues(forKeys: keys),
+                      let modified = values.contentModificationDate,
+                      now.timeIntervalSince(modified) < subagentSilenceLimit else { return nil }
+                let meta = file.deletingPathExtension().appendingPathExtension("meta.json")
+                guard let data = try? Data(contentsOf: meta),
+                      let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      object["finished"] as? Bool != true else { return nil }
+                let task = (object["description"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Sub-agent"
+                return (SubAgent(id: file.deletingPathExtension().lastPathComponent, task: task), values.creationDate ?? modified)
+            }
+            .sorted { $0.created < $1.created }
+            .map(\.agent)
+    }
+
+    /// The shell commands each session is running, by session pid. Commands that only just started are left out:
+    /// most last a blink, and the list is read every couple of seconds.
+    public static func runningCommands(of sessions: Set<Int32>, now: Date = Date()) -> [Int32: [RunningCommand]] {
+        var commands: [Int32: [RunningCommand]] = [:]
+        for child in ProcessTree.children(of: sessions) where now.timeIntervalSince(child.startedAt) >= commandMinimumAge {
+            guard let arguments = ProcessTree.arguments(of: child.pid), arguments.count >= 3, arguments[1] == "-c",
+                  let command = RunningCommand.userCommand(inShellScript: arguments[2]) else { continue }
+            commands[child.parent, default: []].append(RunningCommand(id: child.pid, command: command, startedAt: child.startedAt))
+        }
+        return commands.mapValues { $0.sorted { $0.startedAt < $1.startedAt } }
+    }
+
     private func read(_ handle: FileHandle, from offset: UInt64, length: UInt64) -> String {
         try? handle.seek(toOffset: offset)
         let data = (try? handle.read(upToCount: Int(length))) ?? Data()
@@ -157,4 +197,5 @@ public struct AgentSessionReader: Sendable {
 
     /// Claude Code notes its start a moment after the process is created.
     private static let startTolerance: TimeInterval = 120
+    private static let commandMinimumAge: TimeInterval = 5
 }
