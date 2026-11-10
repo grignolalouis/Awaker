@@ -209,13 +209,14 @@ import Testing
 
 @Suite struct SubAgentTests {
     /// A transcript with a `subagents` folder next to it, holding one pair of files per entry.
-    private func transcript(_ agents: [(id: String, meta: String?, minutesAgo: Double)], now: Date) throws -> URL {
+    private func transcript(_ agents: [(id: String, meta: String?, minutesAgo: Double)], now: Date,
+                            lastLines: [String: String] = [:]) throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let folder = root.appendingPathComponent("session/subagents")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         for agent in agents {
             let file = folder.appendingPathComponent("agent-\(agent.id).jsonl")
-            try Data("{}\n".utf8).write(to: file)
+            try Data(("{}\n" + (lastLines[agent.id].map { $0 + "\n" } ?? "")).utf8).write(to: file)
             try FileManager.default.setAttributes([.modificationDate: now.addingTimeInterval(-agent.minutesAgo * 60)], ofItemAtPath: file.path)
             if let meta = agent.meta {
                 try Data(meta.utf8).write(to: folder.appendingPathComponent("agent-\(agent.id).meta.json"))
@@ -241,6 +242,20 @@ import Testing
         #expect(Set(agents.map(\.id)) == ["agent-running", "agent-unnamed"])
         #expect(agents.first { $0.id == "agent-running" }?.task == "Review the migration")
         #expect(agents.first { $0.id == "agent-unnamed" }?.task == "Sub-agent")
+    }
+
+    @Test func aHelperStoppedByHandIsNoLongerAtWork() throws {
+        let now = Date()
+        let file = try transcript([
+            (id: "killed", meta: #"{"description":"Test helper"}"#, minutesAgo: 0),
+            (id: "running", meta: #"{"description":"Review"}"#, minutesAgo: 0),
+        ], now: now, lastLines: [
+            "killed": #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user for tool use]"}]}}"#,
+            "running": #"{"type":"assistant","message":{"content":[{"type":"text","text":"On it."}]}}"#,
+        ])
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+
+        #expect(AgentSessionReader().subagents(besideTranscript: file, now: now).map(\.id) == ["agent-running"])
     }
 
     @Test func aSessionWithoutHelpersHasNone() {

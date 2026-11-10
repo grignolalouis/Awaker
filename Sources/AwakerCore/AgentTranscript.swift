@@ -8,6 +8,7 @@ import Foundation
 //   `cost-state`, and `assistant` messages (text and tool_use blocks).
 // - `~/.claude/projects/<project>/<sessionId>/subagents/agent-<id>.jsonl` and `.meta.json`: one pair per
 //   helper agent the session started. The meta file holds `description`, and `finished: true` once it is done.
+//   One stopped by hand is not marked: its transcript ends on a "[Request interrupted by user…" message.
 
 /// Extracts a session's details from the lines of its transcript.
 public enum TranscriptParser {
@@ -160,12 +161,23 @@ public struct AgentSessionReader: Sendable {
                 let meta = file.deletingPathExtension().appendingPathExtension("meta.json")
                 guard let data = try? Data(contentsOf: meta),
                       let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      object["finished"] as? Bool != true else { return nil }
+                      object["finished"] as? Bool != true, !wasInterrupted(file) else { return nil }
                 let task = (object["description"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Sub-agent"
                 return (SubAgent(id: file.deletingPathExtension().lastPathComponent, task: task), values.creationDate ?? modified)
             }
             .sorted { $0.created < $1.created }
             .map(\.agent)
+    }
+
+    /// A helper agent that was stopped by hand is never marked finished: its transcript just ends on the
+    /// interruption notice.
+    private func wasInterrupted(_ transcript: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: transcript) else { return false }
+        defer { try? handle.close() }
+        let end = (try? handle.seekToEnd()) ?? 0
+        let tail: UInt64 = 8_000
+        let lastLine = read(handle, from: end > tail ? end - tail : 0, length: tail).split(separator: "\n").last
+        return lastLine?.contains("[Request interrupted by user") == true
     }
 
     /// The shell commands each session is running, by session pid. Commands that only just started are left out:
