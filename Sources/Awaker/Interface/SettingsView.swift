@@ -7,26 +7,23 @@ struct SettingsView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(Updater.self) private var updater
 
-    private let maxWidth: CGFloat = 620
-    private let panelRadius: CGFloat = 24
 
     var body: some View {
-        @Bindable var settings = settings
         // The form doesn't scroll itself: it takes its natural height, and the page scrolls around it.
         ScrollView {
-            form(settings: settings)
+            form
                 .formStyle(.grouped)
                 .scrollContentBackground(.hidden)
                 .scrollDisabled(true)
                 .fixedSize(horizontal: false, vertical: true)
-                .glassEffect(in: .rect(cornerRadius: panelRadius))
-                .frame(maxWidth: maxWidth)
+                .glassEffect(in: .rect(cornerRadius: PanelMetrics.radius))
+                .frame(maxWidth: PanelMetrics.maxWidth)
                 .padding()
         }
         .scrollIndicators(.never)
     }
 
-    private func form(settings: AppSettings) -> some View {
+    private var form: some View {
         @Bindable var settings = settings
         return Form {
             Section {
@@ -48,8 +45,8 @@ struct SettingsView: View {
                 Picker("Durée par défaut", selection: $settings.defaultMinutes) {
                     ForEach(AppSettings.durationChoices, id: \.minutes) { Text($0.label).tag($0.minutes) }
                 }
-                Toggle(isOn: $settings.claudeAutoMode) {
-                    Text("Mode auto Claude Code")
+                Toggle(isOn: $settings.autoMode) {
+                    Text("Mode auto")
                     Text("Garde le Mac éveillé tant qu'un agent travaille ou qu'une de ses commandes tourne, et rend la main 3 minutes après. Une session simplement ouverte ne compte pas.")
                 }
             }

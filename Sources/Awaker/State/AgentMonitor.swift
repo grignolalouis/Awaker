@@ -21,8 +21,12 @@ final class AgentMonitor {
     @ObservationIgnored private var cache: [String: CachedDetails] = [:]
     /// False until the first read: sessions found at launch must not trigger notifications.
     @ObservationIgnored private var hasBaseline = false
-    /// When the screen went off (lid closed, display asleep). Nil while the user is there.
-    @ObservationIgnored private var leftAt: Date?
+    /// When the screen went off (lid closed, display asleep), and what the agents were doing then.
+    /// Nil while the user is there.
+    @ObservationIgnored private var absence: (since: Date, agents: [AgentSession])?
+    /// A read is in flight. Reads can be slow (big transcripts); a second one must not start meanwhile,
+    /// or the older could land last and overwrite newer states.
+    @ObservationIgnored private var isRefreshing = false
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     private let pollInterval: TimeInterval = 2
@@ -72,6 +76,10 @@ final class AgentMonitor {
     // MARK: Reading
 
     private func refresh() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
         let reader = reader
         let known = cache
         // File reads happen off the main thread; transcripts can be large.
@@ -85,7 +93,8 @@ final class AgentMonitor {
             return (sessions, cache.filter { entry in sessions.contains { $0.id == entry.key } })
         }.value
 
-        if hasBaseline && leftAt == nil { notifyChanges(from: agents, to: sessions) }
+        // While the user is away, changes are held for the recap (or told on return).
+        if hasBaseline && absence == nil { notifyChanges(from: agents, to: sessions) }
         cache = newCache
         agents = sessions.sortedForDisplay()
         hasBaseline = true
@@ -114,24 +123,10 @@ final class AgentMonitor {
     private func notifyChanges(from old: [AgentSession], to new: [AgentSession]) {
         guard settings.agentNotifications else { return }
         for agent in new {
-            guard let before = old.first(where: { $0.id == agent.id })?.state, before != agent.state else { continue }
-            switch agent.state {
-            case .waiting:
-                Notifier.post("\(agent.displayTitle) a besoin de toi", "\(Self.request(of: agent)) Projet \(agent.projectName).")
-            case .finished where before == .working, .background where before == .working:
-                Notifier.post("\(agent.displayTitle) a terminé", agent.details.lastReply ?? "À toi de jouer. Projet \(agent.projectName).")
-            default:
-                break
-            }
+            guard let before = old.first(where: { $0.id == agent.id })?.state,
+                  let notification = agent.notification(after: before) else { continue }
+            Notifier.post(notification.title, notification.body)
         }
-    }
-
-    /// What a waiting agent is asking for, as precisely as the files allow.
-    static func request(of agent: AgentSession) -> String {
-        guard case .waiting(let tool) = agent.state else { return "" }
-        if let action = agent.details.pendingAction { return "Il demande ton accord pour : \(action)." }
-        if let tool { return "Il demande ton accord pour : \(tool)." }
-        return "Il attend ta réponse."
     }
 
     // MARK: Presence
@@ -155,39 +150,26 @@ final class AgentMonitor {
     }
 
     private func userLeft() {
-        if leftAt == nil { leftAt = Date() }
+        if absence == nil { absence = (Date(), agents) }
     }
 
     private func userCameBack() {
-        guard let leftAt else { return }
-        self.leftAt = nil
+        guard let absence else { return }
+        self.absence = nil
         Task {
             // The files may have changed while nobody was looking: read them before summing up.
             await refresh()
             let now = Date()
-            guard now.timeIntervalSince(leftAt) >= minimumAbsence,
-                  let recap = AwayRecap(agents: agents, leftAt: leftAt, now: now) else { return }
-            self.recap = recap
-            if settings.agentNotifications {
-                Notifier.post("Pendant ton absence (\(Format.duration(recap.duration)))", recap.sentence)
+            if now.timeIntervalSince(absence.since) >= minimumAbsence,
+               let recap = AwayRecap(agents: agents, leftAt: absence.since, now: now) {
+                self.recap = recap
+                if settings.agentNotifications {
+                    Notifier.post("Pendant ton absence (\(Format.duration(recap.duration)))", recap.sentence)
+                }
+            } else {
+                // Too short for a recap: tell what changed meanwhile, as if the user had been there.
+                notifyChanges(from: absence.agents, to: agents)
             }
         }
-    }
-}
-
-/// Brings the user to an agent: the app hosting its terminal, or its folder when that app can't be found.
-@MainActor
-enum AgentJumper {
-    static func jump(to agent: AgentSession) {
-        var pid: Int32? = agent.pid
-        // Walk up from the CLI to the first regular app: Terminal, iTerm, an editor…
-        while let current = pid {
-            if let app = NSRunningApplication(processIdentifier: current), app.activationPolicy == .regular {
-                app.activate()
-                return
-            }
-            pid = ProcessTree.parent(of: current)
-        }
-        NSWorkspace.shared.open(agent.directory)
     }
 }

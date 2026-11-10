@@ -1,14 +1,16 @@
 import Foundation
 
-enum Shell {
-    struct Result {
-        let status: Int32
-        let output: String
+/// Runs command-line tools.
+public enum Shell {
+    public struct Result: Sendable {
+        public let status: Int32
+        public let output: String
 
-        var succeeded: Bool { status == 0 }
+        public var succeeded: Bool { status == 0 }
     }
 
-    static func run(_ executable: String, _ arguments: [String]) -> Result {
+    @discardableResult
+    public static func run(_ executable: String, _ arguments: [String]) -> Result {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments

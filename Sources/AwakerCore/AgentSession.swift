@@ -35,13 +35,21 @@ public enum AgentState: Equatable, Sendable {
         }
     }
 
+    /// True while something is going on: a turn, a question to the user, a background command.
+    public var isActive: Bool {
+        switch self {
+        case .working, .waiting, .background: true
+        case .finished: false
+        }
+    }
+
     /// Display order: who needs you first, then who is working, then the rest.
     public var priority: Int {
         switch self {
         case .waiting: 0
         case .working: 1
-        case .finished: 2
-        case .background: 3
+        case .background: 2
+        case .finished: 3
         }
     }
 }
@@ -105,16 +113,19 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
     public let name: String
     public let state: AgentState
     public let stateSince: Date
+    /// When Claude Code says the session's process started. Used to tell it from another process reusing its pid.
+    public let startedAt: Date?
     public var details: AgentDetails
 
     public init(id: String, pid: Int32, directory: URL, name: String, state: AgentState, stateSince: Date,
-                details: AgentDetails = AgentDetails()) {
+                startedAt: Date? = nil, details: AgentDetails = AgentDetails()) {
         self.id = id
         self.pid = pid
         self.directory = directory
         self.name = name
         self.state = state
         self.stateSince = stateSince
+        self.startedAt = startedAt
         self.details = details
     }
 
@@ -129,17 +140,19 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
     /// This file is Claude Code's internal format: every field is read defensively.
     public static func decode(_ data: Data) -> AgentSession? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let pid = object["pid"] as? Int,
+              let pid = (object["pid"] as? Int).flatMap(Int32.init(exactly:)), pid > 0,
               let id = object["sessionId"] as? String,
               let cwd = object["cwd"] as? String else { return nil }
         let milliseconds = (object["statusUpdatedAt"] ?? object["updatedAt"] ?? object["startedAt"]) as? Double
+        let started = (object["startedAt"] as? Double).map { Date(timeIntervalSince1970: $0 / 1_000) }
         return AgentSession(
             id: id,
-            pid: Int32(pid),
+            pid: pid,
             directory: URL(fileURLWithPath: cwd),
             name: object["name"] as? String ?? "Session \(pid)",
             state: AgentState(status: object["status"] as? String, waitingFor: object["waitingFor"] as? String),
-            stateSince: milliseconds.map { Date(timeIntervalSince1970: $0 / 1_000) } ?? Date()
+            stateSince: milliseconds.map { Date(timeIntervalSince1970: $0 / 1_000) } ?? Date(),
+            startedAt: started
         )
     }
 }
@@ -176,14 +189,26 @@ public struct AwayRecap: Equatable, Sendable {
     }
 }
 
-/// Finds the parent of a process, to walk up from a CLI to the app that hosts its terminal.
+/// Facts about running processes, read from the kernel.
 public enum ProcessTree {
+    /// The parent of a process, to walk up from a CLI to the app that hosts its terminal.
     public static func parent(of pid: Int32) -> Int32? {
+        guard let info = info(of: pid) else { return nil }
+        let parent = info.kp_eproc.e_ppid
+        return parent > 1 ? parent : nil
+    }
+
+    /// When a process started. Nil when no process has this pid.
+    public static func startTime(of pid: Int32) -> Date? {
+        guard let start = info(of: pid)?.kp_proc.p_starttime else { return nil }
+        return Date(timeIntervalSince1970: Double(start.tv_sec) + Double(start.tv_usec) / 1_000_000)
+    }
+
+    private static func info(of pid: Int32) -> kinfo_proc? {
         var info = kinfo_proc()
         var size = MemoryLayout<kinfo_proc>.stride
         var name: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
-        guard sysctl(&name, UInt32(name.count), &info, &size, nil, 0) == 0, size > 0 else { return nil }
-        let parent = info.kp_eproc.e_ppid
-        return parent > 1 ? parent : nil
+        guard sysctl(&name, UInt32(name.count), &info, &size, nil, 0) == 0, size > 0, info.kp_proc.p_pid == pid else { return nil }
+        return info
     }
 }

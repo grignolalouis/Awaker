@@ -17,7 +17,7 @@ struct MenuBarContent: View {
         if let error = awake.lastError {
             Text("⚠️ \(error)")
         }
-        let active = monitor.agents.filter { $0.state.needsUser || $0.state == .working }.prefix(listedAgents)
+        let active = monitor.agents.filter(\.state.isActive).prefix(listedAgents)
         if !active.isEmpty {
             Divider()
             ForEach(Array(active)) { agent in
@@ -28,16 +28,16 @@ struct MenuBarContent: View {
         }
         Divider()
         if awake.isAuthorized {
-            Button(awake.isActive ? "Arrêter la session" : "Lancer une session (\(defaultLabel))") { awake.toggle() }
+            Button(awake.isActive ? "Arrêter la session" : "Lancer une session (\(settings.defaultDurationLabel.lowercased()))") { awake.toggle() }
                 .keyboardShortcut("a")
             Menu("Lancer pour…") {
                 ForEach(AppSettings.durationChoices, id: \.minutes) { choice in
                     Button(choice.label) {
-                        awake.activate(for: choice.minutes > 0 ? TimeInterval(choice.minutes * 60) : nil)
+                        awake.activate(for: AppSettings.duration(minutes: choice.minutes))
                     }
                 }
             }
-            Toggle("Mode auto Claude Code", isOn: $settings.claudeAutoMode)
+            Toggle("Mode auto", isOn: $settings.autoMode)
         } else {
             Button("Installer l'autorisation…") { awake.installAuthorization() }
         }
@@ -51,17 +51,13 @@ struct MenuBarContent: View {
             .keyboardShortcut("q")
     }
 
-    private var defaultLabel: String {
-        AppSettings.durationChoices.first { $0.minutes == settings.defaultMinutes }?.label.lowercased() ?? "illimité"
-    }
-
     private var status: String {
         guard awake.isActive, let start = awake.startedAt else {
             return "Au repos · \(Format.plural(monitor.busyCount, "agent au travail", "agents au travail"))"
         }
         var text = "Éveillé depuis \(Format.duration(awake.now.timeIntervalSince(start)))"
         if let end = awake.endsAt { text += " · jusqu'à \(Format.time(end))" }
-        if awake.trigger == .claude { text += " · auto" }
+        if awake.trigger == .auto { text += " · auto" }
         return text
     }
 }

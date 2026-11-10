@@ -1,4 +1,3 @@
-import AwakerCore
 import SwiftUI
 
 /// The Claude Code mascot, showing what an agent is doing: trotting while it works, hopping when it
@@ -6,7 +5,11 @@ import SwiftUI
 /// own accessory, so sessions can be told apart at a glance.
 /// The mascot is Anthropic's; it is redrawn here from the block art Claude Code prints at startup.
 struct AgentAvatar: View {
-    let state: AgentState
+    enum Pose {
+        case working, waiting, standing, asleep
+    }
+
+    let pose: Pose
     /// Picks the accessory. The same seed always gives the same one.
     let seed: String
 
@@ -19,10 +22,9 @@ struct AgentAvatar: View {
 
     var body: some View {
         let skin = AvatarSkin.pick(seed: seed)
-        // Only agents that are doing something animate; the others are drawn once.
         TimelineView(.animation(minimumInterval: frameInterval, paused: !isAnimated)) { timeline in
             let step = isAnimated ? Int(timeline.date.timeIntervalSinceReferenceDate / frameInterval) : 0
-            let isAsleep = state == .background
+            let isAsleep = pose == .asleep
             ZStack(alignment: .topTrailing) {
                 PixelSprite(rows: bodyRows(step: step))
                     .fill(orange)
@@ -45,40 +47,34 @@ struct AgentAvatar: View {
         .accessibilityHidden(true)
     }
 
+    /// Only agents that are doing something animate; the others are drawn once.
     private var isAnimated: Bool {
-        guard !reduceMotion else { return false }
-        switch state {
-        case .working, .waiting: return true
-        case .finished, .background: return false
-        }
+        !reduceMotion && (pose == .working || pose == .waiting)
     }
 
     /// A small sign next to the mascot: asleep, or asking for you.
     private var mark: String? {
-        switch state {
-        case .background: "z"
+        switch pose {
+        case .asleep: "z"
         case .waiting: "!"
-        case .working, .finished: nil
+        case .working, .standing: nil
         }
     }
 
     /// Vertical hop, in points (negative is up).
     private func lift(step: Int) -> CGFloat {
-        switch state {
+        switch pose {
         case .working: step.isMultiple(of: 2) ? 0 : -1
         case .waiting: step.isMultiple(of: 2) ? 0 : -4
-        case .finished, .background: 0
+        case .standing, .asleep: 0
         }
     }
 
     private func bodyRows(step: Int) -> [String] {
-        switch state {
-        case .background:
-            return Sprite.asleep
-        case .finished:
-            return Sprite.standing
-        case .working, .waiting:
-            return step.isMultiple(of: 2) ? Sprite.standing : Sprite.stepping
+        switch pose {
+        case .asleep: Sprite.asleep
+        case .standing: Sprite.standing
+        case .working, .waiting: step.isMultiple(of: 2) ? Sprite.standing : Sprite.stepping
         }
     }
 }

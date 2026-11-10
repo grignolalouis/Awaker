@@ -6,13 +6,10 @@ public struct AppRelease: Equatable, Sendable {
     public let version: String
     /// The DMG attached to the release.
     public let downloadURL: URL
-    /// The release's page, for the notes.
-    public let pageURL: URL?
 
-    public init(version: String, downloadURL: URL, pageURL: URL? = nil) {
+    public init(version: String, downloadURL: URL) {
         self.version = version
         self.downloadURL = downloadURL
-        self.pageURL = pageURL
     }
 
     /// Builds a release from where `https://github.com/<repository>/releases/latest` redirects to
@@ -27,7 +24,7 @@ public struct AppRelease: Equatable, Sendable {
             return nil
         }
         let tag = parts[tagIndex + 1]
-        self.init(version: tag.hasPrefix("v") ? String(tag.dropFirst()) : tag, downloadURL: download, pageURL: page)
+        self.init(version: tag.hasPrefix("v") ? String(tag.dropFirst()) : tag, downloadURL: download)
     }
 
     /// True when this release is strictly newer than `current` ("1.10.0" is newer than "1.9.3").

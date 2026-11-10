@@ -10,10 +10,13 @@ enum Backdrop {
         .flatMap { NSImage(contentsOf: $0) }?
         .cgImage(forProposedRect: nil, context: nil, hints: nil)
 
-    static let videoURL = Bundle.main.url(forResource: "backdrop", withExtension: "mp4", subdirectory: "Backdrop")
+    /// The loop and the artist are created once for the app's single window, not on every view update.
+    static let video = Bundle.main.url(forResource: "backdrop", withExtension: "mp4", subdirectory: "Backdrop")
+        .map(VideoLoop.init(url:))
+    static let artist = AsciiArtist()
 
-    /// Blur of the still image behind the characters, in points. The video has the same blur baked in
-    /// (`Scripts/make-loop.swift`): blurring a playing layer live costs far more than it is worth.
+    /// Blur of the still image behind the characters, in points. The video has a matching blur baked in
+    /// (radius 2.5 in its own pixels, see `Assets/Backdrop/README.md`): blurring a playing layer live costs too much.
     static let blurRadius: CGFloat = 3
     /// Darkens the blurred image so the characters, drawn in the image's own colors, stand out as the picture.
     static let dim = Color.black.opacity(0.2)
@@ -24,16 +27,19 @@ enum Backdrop {
 /// The window's background: the illustration (animated when a loop is bundled), blurred and dimmed,
 /// redrawn on top as ASCII art. The loop only plays while the window is visible, and not at all with Reduce Motion.
 struct BackdropView: View {
-    @State private var video = Backdrop.videoURL.map(VideoLoop.init(url:))
-    /// False while the window is hidden behind others or minimized: nothing animates then.
-    @State private var isOnScreen = true
+    /// Nothing animates while nobody can see it: window covered or minimized, or the screen off
+    /// (which is the normal state of a Mac kept awake with its lid closed).
+    @State private var isWindowVisible = true
+    @State private var isScreenAwake = CGDisplayIsAsleep(CGMainDisplayID()) == 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var isAnimating: Bool { isWindowVisible && isScreenAwake && !reduceMotion }
 
     var body: some View {
         // GeometryReader takes exactly the offered size, so the overflowing image can't widen the layout.
         GeometryReader { proxy in
             if let image = Backdrop.image {
-                let movingVideo = reduceMotion ? nil : video
+                let video = reduceMotion ? nil : Backdrop.video
                 ZStack {
                     // The still stays underneath: it shows until the first video frame, and when motion is off.
                     Image(decorative: image, scale: 1)
@@ -42,42 +48,35 @@ struct BackdropView: View {
                         .blur(radius: Backdrop.blurRadius, opaque: true)
                         .frame(width: proxy.size.width, height: proxy.size.height)
                         .clipped()
-                    if let movingVideo {
-                        VideoLoopView(video: movingVideo)
+                    if let video {
+                        VideoLoopView(video: video)
                     }
                     Backdrop.dim
-                    AsciiTexture(size: proxy.size, isPaused: !isOnScreen || movingVideo == nil) { movingVideo?.currentFrame() ?? image }
+                    AsciiArtView(size: proxy.size, isPaused: !isAnimating) { video?.currentFrame() ?? image }
                 }
             } else {
                 Color.black
             }
         }
-        .onAppear { setOnScreen(CGDisplayIsAsleep(CGMainDisplayID()) == 0) }
-        .onDisappear { video?.pause() }
-        // Nothing animates while nobody can see it: window covered or minimized, or the screen off
-        // (which is the normal state of a Mac kept awake with its lid closed).
+        .onChange(of: isAnimating, initial: true) { _, animating in
+            if animating {
+                Backdrop.video?.play()
+            } else {
+                Backdrop.video?.pause()
+            }
+        }
+        .onDisappear { Backdrop.video?.pause() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { notification in
             guard let window = notification.object as? NSWindow, window.styleMask.contains(.titled) else { return }
-            setOnScreen(window.occlusionState.contains(.visible))
+            isWindowVisible = window.occlusionState.contains(.visible)
         }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.screensDidSleepNotification)) { _ in
-            setOnScreen(false)
+            isScreenAwake = false
         }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.screensDidWakeNotification)) { _ in
-            setOnScreen(true)
+            isScreenAwake = true
         }
         .accessibilityHidden(true)
-    }
-}
-
-private extension BackdropView {
-    func setOnScreen(_ visible: Bool) {
-        isOnScreen = visible
-        if visible && !reduceMotion {
-            video?.play()
-        } else {
-            video?.pause()
-        }
     }
 }
 
@@ -173,21 +172,20 @@ private struct VideoLoopView: NSViewRepresentable {
 ///
 /// The art is rendered to a bitmap with CoreText and shown as a plain image. Drawing the glyphs
 /// in a SwiftUI `Canvas` looked right in offscreen renders but never reached the screen.
-private struct AsciiTexture: View {
+private struct AsciiArtView: View {
     let size: CGSize
     /// A still picture is drawn once; nothing is redrawn while paused.
     let isPaused: Bool
     /// The image currently shown behind the art.
     let frame: () -> CGImage?
 
-    @State private var artist = AsciiArtist()
     @Environment(\.displayScale) private var displayScale
 
     private let frameInterval = 0.2
 
     var body: some View {
         TimelineView(.animation(minimumInterval: frameInterval, paused: isPaused)) { _ in
-            if let image = frame(), let art = artist.render(image, size: size, scale: displayScale) {
+            if let image = frame(), let art = Backdrop.artist.render(image, size: size, scale: displayScale) {
                 Image(decorative: art, scale: displayScale)
                     .frame(width: size.width, height: size.height, alignment: .topLeading)
                     .clipped()

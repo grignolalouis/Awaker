@@ -1,3 +1,4 @@
+import AwakerCore
 import Foundation
 import Observation
 
@@ -11,7 +12,7 @@ final class AppSettings {
     static let thresholdChoices = [10, 15, 20, 30]
 
     var defaultMinutes: Int { didSet { defaults.set(defaultMinutes, forKey: Key.defaultMinutes) } }
-    var claudeAutoMode: Bool { didSet { defaults.set(claudeAutoMode, forKey: Key.claudeAutoMode) } }
+    var autoMode: Bool { didSet { defaults.set(autoMode, forKey: Key.autoMode) } }
     var batteryGuard: Bool { didSet { defaults.set(batteryGuard, forKey: Key.batteryGuard) } }
     var batteryThreshold: Int { didSet { defaults.set(batteryThreshold, forKey: Key.batteryThreshold) } }
     var acOnly: Bool { didSet { defaults.set(acOnly, forKey: Key.acOnly) } }
@@ -25,7 +26,8 @@ final class AppSettings {
 
     private enum Key {
         static let defaultMinutes = "defaultMinutes"
-        static let claudeAutoMode = "claudeAutoMode"
+        /// Kept from earlier versions, so the preference survives updates.
+        static let autoMode = "claudeAutoMode"
         static let batteryGuard = "batteryGuard"
         static let batteryThreshold = "batteryThreshold"
         static let acOnly = "acOnly"
@@ -39,7 +41,7 @@ final class AppSettings {
         self.defaults = defaults
         defaults.register(defaults: [
             Key.defaultMinutes: 0,
-            Key.claudeAutoMode: false,
+            Key.autoMode: false,
             Key.batteryGuard: true,
             Key.batteryThreshold: 15,
             Key.acOnly: false,
@@ -49,7 +51,7 @@ final class AppSettings {
             Key.agentNotifications: true,
         ])
         defaultMinutes = defaults.integer(forKey: Key.defaultMinutes)
-        claudeAutoMode = defaults.bool(forKey: Key.claudeAutoMode)
+        autoMode = defaults.bool(forKey: Key.autoMode)
         batteryGuard = defaults.bool(forKey: Key.batteryGuard)
         batteryThreshold = defaults.integer(forKey: Key.batteryThreshold)
         acOnly = defaults.bool(forKey: Key.acOnly)
@@ -59,8 +61,20 @@ final class AppSettings {
         agentNotifications = defaults.bool(forKey: Key.agentNotifications)
     }
 
-    var defaultDuration: TimeInterval? {
-        defaultMinutes > 0 ? TimeInterval(defaultMinutes * 60) : nil
+    var defaultDuration: TimeInterval? { Self.duration(minutes: defaultMinutes) }
+
+    var defaultDurationLabel: String {
+        Self.durationChoices.first { $0.minutes == defaultMinutes }?.label ?? Self.durationChoices[0].label
+    }
+
+    /// A choice's length; nil for "no limit" (0 minutes).
+    static func duration(minutes: Int) -> TimeInterval? {
+        minutes > 0 ? TimeInterval(minutes * 60) : nil
+    }
+
+    /// The protections as one rule.
+    var powerPolicy: PowerPolicy {
+        PowerPolicy(acOnly: acOnly, batteryGuard: batteryGuard, batteryThreshold: batteryThreshold, thermalGuard: thermalGuard)
     }
 
 }

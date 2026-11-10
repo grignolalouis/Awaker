@@ -45,6 +45,44 @@ import Testing
         #expect(session("not json") == nil)
     }
 
+    @Test func rejectsPidsThatAreNotARealProcessId() {
+        // 0 and -1 would pass a `kill(pid, 0)` probe; a huge value would overflow.
+        for pid in ["0", "-1", "99999999999"] {
+            #expect(session("{\"pid\": \(pid), \"sessionId\": \"s\", \"cwd\": \"/tmp\"}") == nil)
+        }
+    }
+
+    @Test func aProcessThatStartedAtAnotherTimeIsNotTheSession() {
+        let me = ProcessInfo.processInfo.processIdentifier
+        let myStart = ProcessTree.startTime(of: me)
+        func candidate(startedAt: Date?) -> AgentSession {
+            AgentSession(id: "s", pid: me, directory: URL(fileURLWithPath: "/tmp"), name: "s", state: .working,
+                         stateSince: Date(), startedAt: startedAt)
+        }
+
+        #expect(myStart != nil)
+        #expect(AgentSessionReader.processIsAlive(candidate(startedAt: myStart)))
+        #expect(AgentSessionReader.processIsAlive(candidate(startedAt: nil)))
+        // Same pid, but the status file is from a process that started a day earlier: a reused pid.
+        #expect(!AgentSessionReader.processIsAlive(candidate(startedAt: myStart?.addingTimeInterval(-86_400))))
+    }
+
+    @Test func notifiesWhenAnAgentNeedsYouOrFinishesWork() {
+        let waiting = AgentSession(id: "a", pid: 1, directory: URL(fileURLWithPath: "/tmp/nexus"), name: "a",
+                                   state: .waiting(tool: "Bash"), stateSince: Date(),
+                                   details: AgentDetails(title: "Migration", pendingAction: "git push origin main"))
+        let request = waiting.notification(after: .working)
+        #expect(request?.title == "Migration a besoin de toi")
+        #expect(request?.body == "Il demande ton accord pour : git push origin main. Projet nexus.")
+
+        let done = agent("b", .finished, minutesAgo: 0)
+        #expect(done.notification(after: .working)?.title == "b a terminé")
+        // Nothing to say when it was not working before, or when nothing changed.
+        #expect(done.notification(after: .waiting(tool: nil)) == nil)
+        #expect(done.notification(after: .finished) == nil)
+        #expect(agent("c", .working, minutesAgo: 0).notification(after: .finished) == nil)
+    }
+
     @Test func onlyRunningWorkKeepsTheMacBusy() {
         #expect(AgentState.working.keepsMacBusy)
         #expect(AgentState.background.keepsMacBusy)
@@ -61,6 +99,7 @@ import Testing
         ].sortedForDisplay()
 
         #expect(sorted.map(\.id) == ["waiting", "working", "done-new", "done-old"])
+        #expect(AgentState.background.isActive && AgentState.background.priority < AgentState.finished.priority)
     }
 
     @Test func recapCountsWhatFinishedMeanwhileAndWhoWaits() throws {
@@ -93,7 +132,7 @@ import Testing
         // Not a status file: must be ignored.
         try Data("secret".utf8).write(to: sessions.appendingPathComponent("10.abc.key"))
 
-        let alive = AgentSessionReader(claudeDirectory: root).sessions { $0 == 20 }
+        let alive = AgentSessionReader(claudeDirectory: root).sessions { $0.pid == 20 }
 
         #expect(alive.map(\.id) == ["s20"])
     }

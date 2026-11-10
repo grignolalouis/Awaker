@@ -1,52 +1,39 @@
-import Foundation
 import AwakerCore
+import Foundation
 import Observation
 
-/// Sessions and minute samples, persisted as JSON. In-memory when `files` is nil (previews, snapshots).
+/// The awake sessions, persisted as JSON. In-memory when `files` is nil (previews, snapshots).
 @MainActor
 @Observable
 final class HistoryStore {
-    private(set) var sessions: [Session]
-    private(set) var samples: [Sample]
+    private(set) var sessions: [AwakeSession]
 
     @ObservationIgnored private let files: JSONFileStore?
-    @ObservationIgnored private var unsavedSamples = 0
-    @ObservationIgnored private let retention: TimeInterval = 14 * 24 * 3600
-    @ObservationIgnored private let samplesPerSave = 10
-
-    private enum File {
-        static let sessions = "sessions.json"
-        static let samples = "samples.json"
-    }
+    private let fileName = "sessions.json"
 
     init(files: JSONFileStore) {
         self.files = files
-        sessions = files.load([Session].self, from: File.sessions) ?? []
-        samples = files.load([Sample].self, from: File.samples) ?? []
-        pruneSamples(before: Date().addingTimeInterval(-retention))
+        sessions = files.load([AwakeSession].self, from: fileName) ?? []
     }
 
-    init(sessions: [Session], samples: [Sample]) {
+    init(sessions: [AwakeSession]) {
         files = nil
         self.sessions = sessions
-        self.samples = samples
     }
-
-    func stats(now: Date) -> SessionStats {
-        SessionStats(sessions: sessions, now: now)
-    }
-
-    func samples(since date: Date) -> [Sample] {
-        samples.filter { $0.date >= date }
-    }
-
-    // MARK: Sessions
 
     func startSession(trigger: Trigger, battery: Int?) -> UUID {
-        let session = Session(start: Date(), trigger: trigger, startBattery: battery)
+        let session = AwakeSession(start: Date(), trigger: trigger, startBattery: battery, lastSeen: Date())
         sessions.append(session)
-        saveSessions()
+        save()
         return session.id
+    }
+
+    /// Notes that a running session is still alive, so a crash can be dated afterwards.
+    func heartbeat(_ id: UUID, battery: Int?) {
+        guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        sessions[index].lastSeen = Date()
+        sessions[index].endBattery = battery
+        save()
     }
 
     func endSession(_ id: UUID, battery: Int?, reason: EndReason) {
@@ -54,52 +41,23 @@ final class HistoryStore {
         sessions[index].end = Date()
         sessions[index].endBattery = battery
         sessions[index].endReason = reason
-        saveSessions()
+        save()
     }
 
-    /// Sessions left open by a crash or a forced shutdown end at their last active sample.
+    /// Sessions left open by a crash or a forced shutdown end where they were last seen alive.
     func closeInterruptedSessions() {
-        var changed = false
-        for index in sessions.indices where sessions[index].isRunning {
-            let start = sessions[index].start
-            let lastActive = samples.last { $0.active && $0.date >= start }
-            sessions[index].end = lastActive?.date ?? start
-            sessions[index].endBattery = lastActive?.battery
-            sessions[index].endReason = .crash
-            changed = true
-        }
-        if changed { saveSessions() }
+        guard sessions.contains(where: \.isRunning) else { return }
+        sessions = sessions.map { $0.isRunning ? $0.closedAfterInterruption() : $0 }
+        save()
     }
 
-    /// Removes finished sessions and all samples. A running session is kept.
+    /// Removes finished sessions. A running session is kept.
     func clear() {
         sessions.removeAll { !$0.isRunning }
-        samples.removeAll()
-        saveSessions()
-        flush()
+        save()
     }
 
-    // MARK: Samples
-
-    func record(_ sample: Sample) {
-        samples.append(sample)
-        pruneSamples(before: sample.date.addingTimeInterval(-retention))
-        unsavedSamples += 1
-        if unsavedSamples >= samplesPerSave { flush() }
-    }
-
-    func flush() {
-        files?.save(samples, to: File.samples)
-        unsavedSamples = 0
-    }
-
-    private func pruneSamples(before cutoff: Date) {
-        if let first = samples.first, first.date < cutoff {
-            samples.removeAll { $0.date < cutoff }
-        }
-    }
-
-    private func saveSessions() {
-        files?.save(sessions, to: File.sessions)
+    private func save() {
+        files?.save(sessions, to: fileName)
     }
 }

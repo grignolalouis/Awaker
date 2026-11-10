@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             if environment.settings.notifications && !environment.isSnapshot {
                 Notifier.requestAuthorization()
             }
-            // Opened by hand (Dock, Finder, Spotlight): show the dashboard. At login: stay in the menu bar.
+            // Opened by hand (Dock, Finder, Spotlight): show the window. At login: stay in the menu bar.
             if !launchedAsLoginItem { WindowOpener.shared.open() }
         }
     }
@@ -39,7 +39,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated {
             AppEnvironment.shared.awake.deactivate(.quit)
-            AppEnvironment.shared.history.flush()
         }
     }
 

@@ -5,63 +5,40 @@ import SwiftUI
 /// A row opens to show the last exchange, the cost, and how to get to that agent.
 struct AgentsPanel: View {
     @Environment(AgentMonitor.self) private var monitor
-    /// Measured heights: the panel hugs its rows, and only fades its edges when the rows overflow it.
-    @State private var contentHeight: CGFloat = 0
-    @State private var viewportHeight: CGFloat = 0
     @State private var expandedID: String?
 
-    private let panelRadius: CGFloat = 24
-    private let rowInset: CGFloat = 18
     /// Width of the avatar plus its gap, so separators and details start under the text.
     private let avatarColumn: CGFloat = 44
-    /// Sessions that finished longer ago than this are folded into one line: they are yesterday's news.
+    /// Agents that finished longer ago than this are folded into one line: they are yesterday's news.
     private let recentWindow: TimeInterval = 6 * 3_600
 
     var body: some View {
-        // The clock drives the "il y a 3 min" labels and the fold between recent and old sessions.
+        // The clock drives the "il y a 3 min" labels and the fold between recent and old agents.
         TimelineView(.periodic(from: .now, by: 30)) { timeline in
             let (recent, older) = split(monitor.agents, now: timeline.date)
-            let rows = VStack(spacing: 0) {
-                ForEach(Array(recent.enumerated()), id: \.element.id) { index, agent in
-                    if index > 0 { Divider().padding(.leading, rowInset + avatarColumn) }
-                    AgentRow(agent: agent, now: timeline.date, avatarColumn: avatarColumn, isExpanded: agent.id == expandedID) {
-                        withAnimation(.spring(duration: 0.3)) { expandedID = agent.id == expandedID ? nil : agent.id }
+            GlassPanel {
+                VStack(spacing: 0) {
+                    PanelRows(items: recent, leadingColumn: avatarColumn) { agent in
+                        AgentRow(agent: agent, now: timeline.date, avatarColumn: avatarColumn, isExpanded: agent.id == expandedID) {
+                            withAnimation(.spring(duration: 0.3)) { expandedID = agent.id == expandedID ? nil : agent.id }
+                        }
                     }
-                    .padding(.horizontal, rowInset)
-                    .padding(.vertical, 10)
-                }
-                if older > 0 || monitor.totalDollars > 0 {
-                    if !recent.isEmpty { Divider().padding(.leading, rowInset + avatarColumn) }
-                    footer(older: older)
-                        .padding(.leading, rowInset + avatarColumn)
-                        .padding(.trailing, rowInset)
-                        .padding(.vertical, 10)
+                    if older > 0 || monitor.totalDollars > 0 {
+                        if !recent.isEmpty { PanelDivider(leadingColumn: avatarColumn) }
+                        footer(older: older)
+                            .padding(.leading, PanelMetrics.rowInset + avatarColumn)
+                            .padding(.trailing, PanelMetrics.rowInset)
+                            .padding(.vertical, PanelMetrics.rowPadding)
+                    }
                 }
             }
-            .padding(.vertical, 6)
-            // One scroll view in both cases. Measuring two candidate layouts (ViewThatFits) on every
-            // avatar frame made SwiftUI lay out the whole window several times a second.
-            ScrollView {
-                rows.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
-            }
-            .scrollIndicators(.never)
-            .frame(maxHeight: contentHeight > 0 ? contentHeight : nil)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { viewportHeight = $0 }
-            .mask {
-                if contentHeight > viewportHeight + 1 {
-                    Self.edgeFade
-                } else {
-                    Rectangle()
-                }
-            }
-            .glassEffect(in: .rect(cornerRadius: panelRadius))
         }
     }
 
     private func footer(older: Int) -> some View {
         HStack {
             if older > 0 {
-                Text(Format.plural(older, "autre session au repos", "autres sessions au repos"))
+                Text(Format.plural(older, "autre agent au repos", "autres agents au repos"))
             }
             Spacer()
             if monitor.totalDollars > 0 {
@@ -74,21 +51,9 @@ struct AgentsPanel: View {
         .foregroundStyle(.secondary)
     }
 
-    /// Rows fade in and out at the top and bottom edges of the scrolling panel.
-    private static let edgeFade = LinearGradient(
-        stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.07),
-                .init(color: .black, location: 0.86), .init(color: .clear, location: 1)],
-        startPoint: .top, endPoint: .bottom
-    )
-
-    /// Sessions worth a row (anything active, or finished recently), and how many older ones are left.
+    /// Agents worth a row (anything going on, or finished recently), and how many older ones are left.
     private func split(_ agents: [AgentSession], now: Date) -> (recent: [AgentSession], older: Int) {
-        let recent = agents.filter { agent in
-            switch agent.state {
-            case .working, .waiting: true
-            case .finished, .background: now.timeIntervalSince(agent.stateSince) < recentWindow
-            }
-        }
+        let recent = agents.filter { $0.state.isActive || now.timeIntervalSince($0.stateSince) < recentWindow }
         return (recent, agents.count - recent.count)
     }
 }
@@ -117,16 +82,16 @@ private struct AgentRow: View {
 
     private var summary: some View {
         HStack(spacing: 0) {
-            AgentAvatar(state: agent.state, seed: agent.id)
+            AgentAvatar(pose: pose, seed: agent.id)
                 .frame(width: avatarColumn, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(agent.displayTitle)
                     .fontWeight(agent.state.needsUser ? .semibold : .regular)
-                Text("\(agent.projectName) · \(status)")
+                Text("\(agent.projectName) · \(agent.statusLabel)")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 // While something is going on, say what was asked.
-                if !isExpanded, isActive, let prompt = agent.details.lastPrompt {
+                if !isExpanded, agent.state.isActive, let prompt = agent.details.lastPrompt {
                     Text("« \(prompt) »")
                         .font(.callout)
                         .foregroundStyle(.tertiary)
@@ -149,7 +114,7 @@ private struct AgentRow: View {
     private var detail: some View {
         VStack(alignment: .leading, spacing: 10) {
             if agent.state.needsUser {
-                DetailLine(label: "Il demande", text: AgentMonitor.request(of: agent), lines: 3)
+                DetailLine(label: "Il demande", text: agent.requestDescription, lines: 3)
             }
             if let prompt = agent.details.lastPrompt {
                 DetailLine(label: "Ta demande", text: prompt, lines: 3)
@@ -173,35 +138,30 @@ private struct AgentRow: View {
         }
     }
 
-    private var isActive: Bool {
+    /// An agent that finished a while ago has gone to sleep.
+    private var pose: AgentAvatar.Pose {
         switch agent.state {
-        case .working, .waiting: true
-        case .finished, .background: false
+        case .working, .background: .working
+        case .waiting: .waiting
+        case .finished: now.timeIntervalSince(agent.stateSince) > Self.dozeDelay ? .asleep : .standing
         }
     }
 
-    /// Green: at work. Orange: needs you. Gray: nothing going on.
+    private static let dozeDelay: TimeInterval = 10 * 60
+
+    /// Green: something is running. Orange: needs you. Gray: nothing going on.
     private var dotColor: Color {
         switch agent.state {
-        case .working: .green
+        case .working, .background: .green
         case .waiting: .orange
-        case .finished, .background: .gray
-        }
-    }
-
-    private var status: String {
-        switch agent.state {
-        case .working: "Travaille"
-        case .waiting(let tool): tool.map { "Demande ton accord : \($0)" } ?? "Attend ta réponse"
-        case .finished: "A terminé"
-        case .background: "Au repos, commande en arrière-plan"
+        case .finished: .gray
         }
     }
 
     /// "depuis 3 min" while something is going on, "il y a 3 min" once it is over.
     private var elapsed: String {
         let duration = Format.duration(now.timeIntervalSince(agent.stateSince))
-        return isActive ? "depuis \(duration)" : "il y a \(duration)"
+        return agent.state.isActive ? "depuis \(duration)" : "il y a \(duration)"
     }
 }
 

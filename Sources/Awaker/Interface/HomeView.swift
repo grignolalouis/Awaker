@@ -1,10 +1,9 @@
 import AwakerCore
 import SwiftUI
 
-/// The home screen: start or stop a session, see whether the Mac is ready, and follow the Claude Code agents.
-struct SessionView: View {
+/// The home screen: start or stop keeping the Mac awake, see whether it is ready, and follow the agents.
+struct HomeView: View {
     @Environment(AwakeController.self) private var awake
-    @Environment(AppSettings.self) private var settings
     @Environment(AgentMonitor.self) private var monitor
 
     private let glassSpacing: CGFloat = 12
@@ -13,11 +12,11 @@ struct SessionView: View {
     var body: some View {
         VStack(spacing: 28) {
             if awake.isActive, let start = awake.startedAt {
-                timer(since: start)
+                SessionTimer(start: start)
             }
             GlassEffectContainer(spacing: glassSpacing) {
                 VStack(spacing: glassSpacing) {
-                    controls
+                    SessionControls(spacing: glassSpacing)
                     ReadinessPill()
                     if let error = awake.lastError {
                         Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -39,8 +38,14 @@ struct SessionView: View {
         .padding()
         .animation(.spring(duration: 0.35), value: awake.isActive)
     }
+}
 
-    private func timer(since start: Date) -> some View {
+/// How long the Mac has been kept awake, and until when.
+private struct SessionTimer: View {
+    let start: Date
+    @Environment(AwakeController.self) private var awake
+
+    var body: some View {
         VStack(spacing: 4) {
             Text(start, style: .timer)
                 .font(.system(size: 64, weight: .semibold, design: .rounded))
@@ -53,10 +58,17 @@ struct SessionView: View {
 
     private var until: String {
         if let end = awake.endsAt { return "Jusqu'à \(Format.time(end))" }
-        return awake.trigger == .claude ? "Tant que Claude Code tourne" : "Sans limite"
+        return awake.trigger == .auto ? "Tant qu'un agent travaille" : "Sans limite"
     }
+}
 
-    @ViewBuilder private var controls: some View {
+/// The one action that matters: install the authorization, start, or stop.
+private struct SessionControls: View {
+    let spacing: CGFloat
+    @Environment(AwakeController.self) private var awake
+    @Environment(AppSettings.self) private var settings
+
+    var body: some View {
         @Bindable var settings = settings
         if !awake.isAuthorized {
             Button("Installer l'autorisation…", systemImage: "key.fill") { awake.installAuthorization() }
@@ -68,7 +80,7 @@ struct SessionView: View {
                 .controlSize(.extraLarge)
                 .keyboardShortcut(.space, modifiers: [])
         } else {
-            HStack(spacing: glassSpacing) {
+            HStack(spacing: spacing) {
                 Button("Lancer la session", systemImage: "play.fill") { awake.activate(for: settings.defaultDuration) }
                     .buttonStyle(.glassProminent)
                     .keyboardShortcut(.space, modifiers: [])
@@ -78,7 +90,7 @@ struct SessionView: View {
                     }
                     .pickerStyle(.inline)
                 } label: {
-                    Label(durationLabel, systemImage: "timer")
+                    Label(settings.defaultDurationLabel, systemImage: "timer")
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
                         .contentShape(Capsule())
@@ -93,13 +105,9 @@ struct SessionView: View {
             .controlSize(.extraLarge)
         }
     }
-
-    private var durationLabel: String {
-        AppSettings.durationChoices.first { $0.minutes == settings.defaultMinutes }?.label ?? "Illimité"
-    }
 }
 
-/// One glass pill, three facts: authorization, power, Claude Code. Each reflects the live state.
+/// One glass pill, three facts: authorization, power, agents. Each reflects the live state.
 private struct ReadinessPill: View {
     @Environment(AwakeController.self) private var awake
     @Environment(AppSettings.self) private var settings
@@ -107,33 +115,23 @@ private struct ReadinessPill: View {
 
     var body: some View {
         HStack(spacing: 18) {
-            ForEach(Readiness(awake: awake, settings: settings, agents: monitor.agents).checks) { check in
-                Label {
-                    Text(check.text)
-                } icon: {
-                    Image(systemName: check.state.symbol)
-                        .foregroundStyle(check.state.color)
-                }
-                .lineLimit(1)
-            }
+            fact(awake.isAuthorized ? .ready : .blocked, awake.isAuthorized ? "Autorisé" : "Autorisation requise")
+            fact(powerLevel, powerText)
+            fact(agentsLevel, agentsText)
         }
         .font(.callout)
         .padding(.horizontal, 18)
         .padding(.vertical, 11)
         .glassEffect()
     }
-}
 
-/// What a session needs, read from the live state. Text always describes the current situation.
-@MainActor
-struct Readiness {
-    enum State {
-        case ready, waiting, blocked
+    private enum Level {
+        case ready, quiet, blocked
 
         var symbol: String {
             switch self {
             case .ready: "checkmark.circle.fill"
-            case .waiting: "circle.dashed"
+            case .quiet: "circle.dashed"
             case .blocked: "exclamationmark.circle.fill"
             }
         }
@@ -141,54 +139,41 @@ struct Readiness {
         var color: Color {
             switch self {
             case .ready: .green
-            case .waiting: .secondary
+            case .quiet: .secondary
             case .blocked: .orange
             }
         }
     }
 
-    struct Check: Identifiable {
-        let id: String
-        let state: State
-        let text: String
+    private func fact(_ level: Level, _ text: String) -> some View {
+        Label {
+            Text(text)
+        } icon: {
+            Image(systemName: level.symbol).foregroundStyle(level.color)
+        }
+        .lineLimit(1)
     }
 
-    let awake: AwakeController
-    let settings: AppSettings
-    let agents: [AgentSession]
-
-    var checks: [Check] { [authorization, power, claude] }
-
-    private var authorization: Check {
-        awake.isAuthorized
-            ? Check(id: "authorization", state: .ready, text: "Autorisé")
-            : Check(id: "authorization", state: .blocked, text: "Autorisation requise")
+    /// Blocked exactly when the protections would refuse or stop a session: the same rule the controller applies.
+    private var powerLevel: Level {
+        settings.powerPolicy.blocker(battery: awake.battery, isThermalCritical: awake.isThermalCritical) == nil ? .ready : .blocked
     }
 
-    private var power: Check {
-        guard let battery = awake.battery else {
-            return Check(id: "power", state: .ready, text: "Sur secteur")
-        }
-        if battery.onAC {
-            return Check(id: "power", state: .ready, text: "Secteur · \(battery.percent) %")
-        }
-        let isBlocked = settings.acOnly || (settings.batteryGuard && battery.percent <= settings.batteryThreshold)
-        return Check(id: "power", state: isBlocked ? .blocked : .ready, text: "Batterie · \(battery.percent) %")
+    private var powerText: String {
+        if awake.isThermalCritical && settings.thermalGuard { return "Mac trop chaud" }
+        guard let battery = awake.battery else { return "Sur secteur" }
+        return "\(battery.onAC ? "Secteur" : "Batterie") · \(battery.percent) %"
     }
 
-    /// The headline about the agents: someone waiting for you beats everything else.
-    private var claude: Check {
-        let waiting = agents.filter(\.state.needsUser).count
-        let working = agents.filter { $0.state == .working }.count
-        if waiting > 0 {
-            return Check(id: "claude", state: .blocked, text: Format.plural(waiting, "agent t'attend", "agents t'attendent"))
-        }
-        if working > 0 {
-            return Check(id: "claude", state: .ready, text: Format.plural(working, "agent au travail", "agents au travail"))
-        }
-        guard !agents.isEmpty else {
-            return Check(id: "claude", state: .waiting, text: "Aucune session Claude Code")
-        }
-        return Check(id: "claude", state: .waiting, text: Format.plural(agents.count, "session au repos", "sessions au repos"))
+    /// Someone waiting for you beats everything else.
+    private var agentsLevel: Level {
+        if monitor.waitingCount > 0 { return .blocked }
+        return monitor.busyCount > 0 ? .ready : .quiet
+    }
+
+    private var agentsText: String {
+        if monitor.waitingCount > 0 { return Format.plural(monitor.waitingCount, "agent t'attend", "agents t'attendent") }
+        if monitor.busyCount > 0 { return Format.plural(monitor.busyCount, "agent au travail", "agents au travail") }
+        return monitor.agents.isEmpty ? "Aucun agent" : Format.plural(monitor.agents.count, "agent au repos", "agents au repos")
     }
 }

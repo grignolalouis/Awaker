@@ -44,7 +44,7 @@ public extension Trigger {
     var label: String {
         switch self {
         case .manual: "Manuel"
-        case .claude: "Auto · Claude Code"
+        case .auto: "Auto"
         }
     }
 }
@@ -57,28 +57,53 @@ public extension EndReason {
         case .battery: "Batterie faible"
         case .unplugged: "Chargeur débranché"
         case .thermal: "Surchauffe"
-        case .claudeIdle: "Agents au repos"
+        case .agentsIdle: "Agents au repos"
         case .quit: "App quittée"
         case .crash: "Interrompu"
         }
     }
-}
 
-public extension BatteryInfo {
-    var sourceLabel: String {
-        if charging { return "En charge" }
-        return onAC ? "Sur secteur" : "Sur batterie"
+    /// Why a session can't start, said to the user. Nil for reasons that never block a start.
+    func blockerMessage(battery: BatteryInfo?) -> String? {
+        switch self {
+        case .unplugged: "Branche le chargeur : l'option « secteur uniquement » est active."
+        case .battery: "Batterie trop faible (\(battery?.percent ?? 0) %)."
+        case .thermal: "Le Mac est trop chaud."
+        case .manual, .timer, .agentsIdle, .quit, .crash: nil
+        }
     }
 }
 
-public extension ProcessInfo.ThermalState {
-    var label: String {
-        switch self {
-        case .nominal: "Normale"
-        case .fair: "Tiède"
-        case .serious: "Élevée"
-        case .critical: "Critique"
-        @unknown default: "Inconnue"
+public extension AgentSession {
+    /// What the agent is doing, in a few words.
+    var statusLabel: String {
+        switch state {
+        case .working: "Travaille"
+        case .waiting(let tool): tool.map { "Demande ton accord : \($0)" } ?? "Attend ta réponse"
+        case .finished: "A terminé"
+        case .background: "Commande en cours en arrière-plan"
+        }
+    }
+
+    /// What a waiting agent is asking for, as precisely as its files allow. Empty when it isn't waiting.
+    var requestDescription: String {
+        guard case .waiting(let tool) = state else { return "" }
+        if let action = details.pendingAction { return "Il demande ton accord pour : \(action)." }
+        if let tool { return "Il demande ton accord pour : \(tool)." }
+        return "Il attend ta réponse."
+    }
+
+    /// The notification this agent deserves after moving from `previous` to its current state, if any:
+    /// it now needs the user, or it has just finished working.
+    func notification(after previous: AgentState) -> (title: String, body: String)? {
+        guard previous != state else { return nil }
+        switch state {
+        case .waiting:
+            return ("\(displayTitle) a besoin de toi", "\(requestDescription) Projet \(projectName).")
+        case .finished where previous == .working, .background where previous == .working:
+            return ("\(displayTitle) a terminé", details.lastReply ?? "À toi de jouer. Projet \(projectName).")
+        case .working, .finished, .background:
+            return nil
         }
     }
 }

@@ -99,13 +99,13 @@ public struct AgentSessionReader: Sendable {
     }
 
     /// Sessions whose process is still alive, without their transcript details.
-    public func sessions(isAlive: (Int32) -> Bool = AgentSessionReader.processIsAlive) -> [AgentSession] {
+    public func sessions(isAlive: (AgentSession) -> Bool = AgentSessionReader.processIsAlive) -> [AgentSession] {
         let files = (try? FileManager.default.contentsOfDirectory(at: sessionsDirectory, includingPropertiesForKeys: nil)) ?? []
         return files
             .filter { $0.pathExtension == "json" }
             .compactMap { try? Data(contentsOf: $0) }
             .compactMap(AgentSession.decode)
-            .filter { isAlive($0.pid) }
+            .filter(isAlive)
     }
 
     /// The transcript of a session, wherever Claude Code filed it.
@@ -146,8 +146,15 @@ public struct AgentSessionReader: Sendable {
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// True when a process with this id exists (signal 0 probes without sending anything).
-    public static func processIsAlive(_ pid: Int32) -> Bool {
-        kill(pid, 0) == 0 || errno == EPERM
+    /// True when the session's own process is still running. A pid alone is not enough: after a crash or a
+    /// reboot, a leftover status file could match an unrelated process that reused the pid, and a phantom
+    /// "busy" agent would keep the Mac awake for ever. So the process must also have started when the file says.
+    public static func processIsAlive(_ session: AgentSession) -> Bool {
+        guard let processStart = ProcessTree.startTime(of: session.pid) else { return false }
+        guard let startedAt = session.startedAt else { return true }
+        return abs(processStart.timeIntervalSince(startedAt)) < startTolerance
     }
+
+    /// Claude Code notes its start a moment after the process is created.
+    private static let startTolerance: TimeInterval = 120
 }

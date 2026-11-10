@@ -1,10 +1,10 @@
+import AwakerCore
 import Foundation
 import IOKit.pwr_mgt
-import AwakerCore
 import Observation
-import ServiceManagement
 
-/// Owns the "keep awake" state, the protections and the live machine readings.
+/// Owns the "keep awake" state: starting and stopping sessions, applying the protections and auto mode,
+/// and making sure the Mac's real sleep setting always matches what the app shows.
 @MainActor
 @Observable
 final class AwakeController {
@@ -13,63 +13,64 @@ final class AwakeController {
     private(set) var trigger: Trigger?
     private(set) var startedAt: Date?
     private(set) var endsAt: Date?
-    private(set) var isAuthorized = false
-    private(set) var launchesAtLogin = false
+    private(set) var isAuthorized: Bool
+    private(set) var launchesAtLogin: Bool
     private(set) var lastError: String?
 
     // Live readings, refreshed every tick
     private(set) var now = Date()
     private(set) var battery: BatteryInfo?
-    private(set) var thermal: ProcessInfo.ThermalState = .nominal
+    private(set) var isThermalCritical = false
 
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let history: HistoryStore
     @ObservationIgnored private let agents: AgentMonitor
-    /// Preview mode never touches pmset, sudo or the login item.
-    @ObservationIgnored private let isPreview: Bool
+    @ObservationIgnored private let system: SystemControl
+    @ObservationIgnored private let defaults: UserDefaults
 
+    @ObservationIgnored private var autoMode = AutoMode()
     @ObservationIgnored private var assertionID: IOPMAssertionID = 0
     @ObservationIgnored private var sessionID: UUID?
     @ObservationIgnored private var ticker: Timer?
-    @ObservationIgnored private var tickCount = 0
-    @ObservationIgnored private var claudeIdleTicks = 0
-    @ObservationIgnored private var autoModeSuppressed = false
 
     private let tickInterval: TimeInterval = 30
-    /// Consecutive ticks without any agent at work before an auto session ends (3 min).
-    /// Long enough not to drop the session between two turns.
-    private let claudeIdleTicksToStop = 6
 
-    init(settings: AppSettings, history: HistoryStore, agents: AgentMonitor, isPreview: Bool = false) {
+    private enum Key {
+        static let resumeTrigger = "resumeTrigger"
+        static let resumeEndsAt = "resumeEndsAt"
+    }
+
+    init(settings: AppSettings, history: HistoryStore, agents: AgentMonitor, system: SystemControl,
+         defaults: UserDefaults = .standard) {
         self.settings = settings
         self.history = history
         self.agents = agents
-        self.isPreview = isPreview
-        // Read before the first scene renders: it decides whether the window opens at launch.
-        // Previews show the app as it looks once set up.
-        isAuthorized = isPreview || PowerService.isAuthorized
-        launchesAtLogin = SMAppService.mainApp.status == .enabled
+        self.system = system
+        self.defaults = defaults
+        isAuthorized = system.isAuthorized()
+        launchesAtLogin = system.launchesAtLogin()
     }
 
-    /// Running Claude Code sessions, whatever they are doing.
-    var claudeSessionCount: Int { agents.agents.count }
-    /// Agents whose work a sleeping Mac would stop. Auto mode follows these, not merely open sessions.
-    private var busyAgentCount: Int { agents.busyCount }
+    /// Why a session can't start right now, in the user's words. Nil when it can.
+    var startBlocker: String? {
+        if !isAuthorized { return "Installe d'abord l'autorisation dans les réglages." }
+        return settings.powerPolicy.blocker(battery: battery, isThermalCritical: isThermalCritical)?.blockerMessage(battery: battery)
+    }
 
     /// Call once at launch.
     func start() {
-        if !isPreview {
-            // A previous run that died while active leaves sleep disabled.
-            if isAuthorized && PowerService.isSleepDisabled {
-                PowerService.setSleepDisabled(false)
-            }
-            history.closeInterruptedSessions()
-            scheduleTicker()
+        refreshReadings()
+        history.closeInterruptedSessions()
+        reconcileSleepSetting()
+        resumeSessionAfterRelaunch()
+        let timer = Timer(timeInterval: tickInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
         }
-        refresh()
+        RunLoop.main.add(timer, forMode: .common)
+        ticker = timer
     }
 
-    // MARK: Activation
+    // MARK: Starting and stopping
 
     func toggle() {
         if isActive {
@@ -81,16 +82,16 @@ final class AwakeController {
 
     @discardableResult
     func activate(for duration: TimeInterval?, trigger: Trigger = .manual) -> Bool {
-        let isAutomatic = trigger == .claude
+        let isAutomatic = trigger == .auto
         if !isAutomatic { lastError = nil }
 
-        if let reason = blockingReason() {
-            if !isAutomatic { lastError = reason }
+        if let blocker = startBlocker {
+            if !isAutomatic { lastError = blocker }
             return false
         }
 
         if !isActive {
-            guard PowerService.setSleepDisabled(true) else {
+            guard system.setSleepDisabled(true) else {
                 lastError = "pmset a refusé la commande. Réinstalle l'autorisation."
                 return false
             }
@@ -107,19 +108,18 @@ final class AwakeController {
 
         self.trigger = trigger
         endsAt = duration.map { Date().addingTimeInterval($0) }
-        claudeIdleTicks = 0
         if isAutomatic {
-            let count = Format.plural(busyAgentCount, "agent au travail", "agents au travail")
+            let count = Format.plural(agents.busyCount, "agent au travail", "agents au travail")
             notify("Mac maintenu éveillé", "\(count). Tu peux fermer le capot.")
         } else {
-            autoModeSuppressed = false
+            autoMode.userStarted()
         }
         return true
     }
 
     func deactivate(_ reason: EndReason = .manual) {
         guard isActive else { return }
-        PowerService.setSleepDisabled(false)
+        let restored = system.setSleepDisabled(false)
         if assertionID != 0 {
             IOPMAssertionRelease(assertionID)
             assertionID = 0
@@ -127,116 +127,119 @@ final class AwakeController {
         if let sessionID {
             history.endSession(sessionID, battery: battery?.percent, reason: reason)
         }
-        // A manual stop while Claude Code runs must not be undone by auto mode on the next tick.
-        if reason == .manual && settings.claudeAutoMode && busyAgentCount > 0 {
-            autoModeSuppressed = true
-        }
+        if reason == .manual { autoMode.userStopped() }
         sessionID = nil
         isActive = false
         trigger = nil
         startedAt = nil
         endsAt = nil
-        if reason.isAutomatic {
+
+        if !restored {
+            // The worst failure this app can have: say so, and `reconcileSleepSetting` retries on every tick.
+            lastError = "La veille normale n'a pas pu être rétablie. Nouvel essai en cours."
+        } else if reason.isAutomatic {
             notify("Veille normale rétablie", reason.label)
         }
     }
 
-    private func blockingReason() -> String? {
-        if !isAuthorized { return "Installe d'abord l'autorisation dans les réglages." }
-        if let battery, !battery.onAC {
-            if settings.acOnly { return "Branche le chargeur : l'option « secteur uniquement » est active." }
-            if settings.batteryGuard && battery.percent <= settings.batteryThreshold {
-                return "Batterie trop faible (\(battery.percent) %)."
-            }
+    // MARK: Ticking
+
+    private func tick() {
+        refreshReadings()
+        reconcileSleepSetting()
+        if isActive, let sessionID {
+            history.heartbeat(sessionID, battery: battery?.percent)
         }
-        if settings.thermalGuard && thermal == .critical { return "Le Mac est trop chaud." }
-        return nil
+
+        if isActive, let stop = stopReason() {
+            return deactivate(stop)
+        }
+        switch autoMode.step(now: now, isEnabled: settings.autoMode, busyAgents: agents.busyCount,
+                             isAwake: isActive, isAutoSession: trigger == .auto) {
+        case .start: activate(for: nil, trigger: .auto)
+        case .stop: deactivate(.agentsIdle)
+        case .nothing: break
+        }
     }
 
-    // MARK: Ticker
-
-    private func scheduleTicker() {
-        let timer = Timer(timeInterval: tickInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        ticker = timer
-    }
-
-    private func refresh() {
+    private func refreshReadings() {
         now = Date()
-        battery = PowerService.battery()
-        thermal = ProcessInfo.processInfo.thermalState
+        battery = system.battery()
+        isThermalCritical = ProcessInfo.processInfo.thermalState == .critical
+    }
+
+    /// Why the running session must stop now: its time is up, or a protection kicks in.
+    private func stopReason() -> EndReason? {
+        if let endsAt, now >= endsAt { return .timer }
+        return settings.powerPolicy.blocker(battery: battery, isThermalCritical: isThermalCritical)
+    }
+
+    /// Makes the Mac's real setting match the app's state. Sleep can be left disabled by a crash or a failed
+    /// restore, and switched back on behind a running session by another copy of the app or by hand.
+    private func reconcileSleepSetting() {
+        guard isAuthorized else { return }
+        let isDisabled = system.isSleepDisabled()
+        guard isDisabled != isActive else { return }
+        if system.setSleepDisabled(isActive), !isActive, lastError?.hasPrefix("La veille normale") == true {
+            lastError = nil
+        }
     }
 
     private func notify(_ title: String, _ body: String) {
         if settings.notifications { Notifier.post(title, body) }
     }
 
-    private func tick() {
-        refresh()
-        tickCount += 1
-        if tickCount.isMultiple(of: 2) {
-            history.record(Sample(date: now, battery: battery?.percent, onAC: battery?.onAC ?? true,
-                                  active: isActive, claudeSessions: claudeSessionCount))
-        }
-        if busyAgentCount == 0 { autoModeSuppressed = false }
+    // MARK: Surviving a relaunch
 
-        if isActive {
-            enforceProtections()
-        } else if settings.claudeAutoMode && busyAgentCount > 0 && !autoModeSuppressed {
-            activate(for: nil, trigger: .claude)
-        }
+    /// Call before the app quits to update itself: the running session picks up where it left off.
+    func rememberSessionForRelaunch() {
+        guard isActive, let trigger else { return }
+        defaults.set(trigger.rawValue, forKey: Key.resumeTrigger)
+        defaults.set(endsAt, forKey: Key.resumeEndsAt)
     }
 
-    private func enforceProtections() {
-        if let endsAt, now >= endsAt { return deactivate(.timer) }
-        if let battery, !battery.onAC {
-            if settings.acOnly { return deactivate(.unplugged) }
-            if settings.batteryGuard && battery.percent <= settings.batteryThreshold { return deactivate(.battery) }
+    private func resumeSessionAfterRelaunch() {
+        defer {
+            defaults.removeObject(forKey: Key.resumeTrigger)
+            defaults.removeObject(forKey: Key.resumeEndsAt)
         }
-        if settings.thermalGuard && thermal == .critical { return deactivate(.thermal) }
-        if trigger == .claude {
-            claudeIdleTicks = busyAgentCount == 0 ? claudeIdleTicks + 1 : 0
-            if claudeIdleTicks >= claudeIdleTicksToStop { deactivate(.claudeIdle) }
-        }
+        guard let trigger = defaults.string(forKey: Key.resumeTrigger).flatMap(Trigger.init(rawValue:)) else { return }
+        let endsAt = defaults.object(forKey: Key.resumeEndsAt) as? Date
+        if let endsAt, endsAt <= now { return }
+        activate(for: endsAt?.timeIntervalSince(now), trigger: trigger)
     }
 
     // MARK: Authorization and login item
 
     func installAuthorization() {
-        lastError = PowerService.installAuthorization()
-        isAuthorized = PowerService.isAuthorized
+        lastError = system.installAuthorization()
+        isAuthorized = system.isAuthorized()
     }
 
     func removeAuthorization() {
         deactivate()
-        lastError = PowerService.removeAuthorization()
-        isAuthorized = PowerService.isAuthorized
+        lastError = system.removeAuthorization()
+        isAuthorized = system.isAuthorized()
     }
 
     func setLaunchesAtLogin(_ enabled: Bool) {
-        guard !isPreview else { return }
         do {
-            if enabled {
-                try SMAppService.mainApp.register()
-            } else {
-                try SMAppService.mainApp.unregister()
-            }
+            try system.setLaunchesAtLogin(enabled)
         } catch {
             lastError = "Ouverture de session : \(error.localizedDescription)"
         }
-        launchesAtLogin = SMAppService.mainApp.status == .enabled
+        launchesAtLogin = system.launchesAtLogin()
     }
 
     // MARK: Preview
 
-    /// Fakes an active session for snapshots. No effect outside preview mode.
+    /// Shows a running session in snapshots. It goes through the normal path, on a `SystemControl` that does nothing.
     func previewSetActive(_ active: Bool) {
-        guard isPreview else { return }
-        isActive = active
-        trigger = active ? .claude : nil
-        startedAt = active ? Date().addingTimeInterval(-5_040) : nil
-        endsAt = nil
+        if active {
+            activate(for: nil, trigger: .auto)
+            startedAt = Date().addingTimeInterval(-5_040)
+        } else {
+            deactivate()
+        }
     }
 }

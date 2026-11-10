@@ -1,13 +1,13 @@
 import SwiftUI
 
 enum Screen: String, CaseIterable, Identifiable {
-    case session, history, settings
+    case home, history, settings
 
     var id: Self { self }
 
     var title: String {
         switch self {
-        case .session: "Session"
+        case .home: "Accueil"
         case .history: "Historique"
         case .settings: "Réglages"
         }
@@ -15,7 +15,7 @@ enum Screen: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
-        case .session: "power"
+        case .home: "house"
         case .history: "clock.arrow.circlepath"
         case .settings: "gearshape"
         }
@@ -28,7 +28,7 @@ struct ContentView: View {
     static let defaultSize = CGSize(width: 880, height: 620)
     private let minimumSize = CGSize(width: 680, height: 520)
 
-    @State private var screen: Screen = .session
+    @State private var screen: Screen = .home
 
     var body: some View {
         ZStack {
@@ -36,7 +36,7 @@ struct ContentView: View {
                 .ignoresSafeArea()
             Group {
                 switch screen {
-                case .session: SessionView()
+                case .home: HomeView()
                 case .history: HistoryView()
                 case .settings: SettingsView()
                 }

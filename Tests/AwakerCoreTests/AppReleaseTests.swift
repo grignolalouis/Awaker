@@ -9,7 +9,6 @@ import Testing
 
         #expect(release.version == "1.2.0")
         #expect(release.downloadURL.absoluteString == "https://github.com/o/r/releases/download/v1.2.0/Awaker.dmg")
-        #expect(release.pageURL == page)
     }
 
     @Test func aRepositoryWithoutReleaseGivesNothing() throws {

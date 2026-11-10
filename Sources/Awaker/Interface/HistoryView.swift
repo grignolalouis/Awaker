@@ -1,7 +1,7 @@
 import AwakerCore
 import SwiftUI
 
-/// Every session, newest first, in a glass panel that is as tall as its rows and scrolls when they overflow.
+/// Every awake session, newest first.
 struct HistoryView: View {
     private enum Filter: Hashable {
         case all
@@ -13,9 +13,6 @@ struct HistoryView: View {
     @State private var filter: Filter = .all
     @State private var isConfirmingClear = false
 
-    private let maxWidth: CGFloat = 620
-    private let panelRadius: CGFloat = 24
-    private let rowInset: CGFloat = 18
     /// Width of the leading icon plus its gap, so separators start under the text.
     private let iconColumn: CGFloat = 32
 
@@ -25,7 +22,7 @@ struct HistoryView: View {
                 Picker("Filtre", selection: $filter) {
                     Text("Toutes").tag(Filter.all)
                     Text("Manuelles").tag(Filter.only(.manual))
-                    Text("Auto").tag(Filter.only(.claude))
+                    Text("Auto").tag(Filter.only(.auto))
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -39,9 +36,19 @@ struct HistoryView: View {
                     .buttonStyle(.glass)
                     .disabled(history.sessions.isEmpty)
             }
-            list
+            if sessions.isEmpty {
+                ContentUnavailableView("Aucune session", systemImage: "clock",
+                                       description: Text("Chaque session apparaîtra ici avec sa durée et sa raison d'arrêt."))
+                    .glassEffect(in: .rect(cornerRadius: PanelMetrics.radius))
+            } else {
+                GlassPanel {
+                    PanelRows(items: sessions, leadingColumn: iconColumn) { session in
+                        SessionRow(session: session, now: awake.now, iconColumn: iconColumn)
+                    }
+                }
+            }
         }
-        .frame(maxWidth: maxWidth)
+        .frame(maxWidth: PanelMetrics.maxWidth)
         .frame(maxHeight: .infinity, alignment: .top)
         .padding()
         .confirmationDialog("Effacer l'historique ?", isPresented: $isConfirmingClear) {
@@ -51,31 +58,8 @@ struct HistoryView: View {
         }
     }
 
-    @ViewBuilder private var list: some View {
-        if sessions.isEmpty {
-            ContentUnavailableView("Aucune session", systemImage: "clock",
-                                   description: Text("Chaque session apparaîtra ici avec sa durée et sa raison d'arrêt."))
-                .glassEffect(in: .rect(cornerRadius: panelRadius))
-        } else {
-            // Rows in a plain stack, so the panel hugs its content (a `List` always fills the height).
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
-                        if index > 0 { Divider().padding(.leading, rowInset + iconColumn) }
-                        SessionRow(session: session, now: awake.now, iconColumn: iconColumn)
-                            .padding(.horizontal, rowInset)
-                            .padding(.vertical, 10)
-                    }
-                }
-                .padding(.vertical, 6)
-                .glassEffect(in: .rect(cornerRadius: panelRadius))
-            }
-            .scrollIndicators(.never)
-        }
-    }
-
     /// Newest first, filtered by trigger.
-    private var sessions: [Session] {
+    private var sessions: [AwakeSession] {
         let all = history.sessions.sorted { $0.start > $1.start }
         switch filter {
         case .all: return all
@@ -84,19 +68,19 @@ struct HistoryView: View {
     }
 
     private var summary: String {
-        let total = history.stats(now: awake.now).total
+        let total = history.sessions.totalAwakeTime(now: awake.now)
         return "\(Format.plural(history.sessions.count, "session", "sessions")) · \(Format.duration(total))"
     }
 }
 
 private struct SessionRow: View {
-    let session: Session
+    let session: AwakeSession
     let now: Date
     let iconColumn: CGFloat
 
     var body: some View {
         HStack(spacing: 0) {
-            Image(systemName: session.trigger == .claude ? "sparkles" : "power")
+            Image(systemName: session.trigger == .auto ? "sparkles" : "power")
                 .foregroundStyle(.secondary)
                 .frame(width: iconColumn, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
