@@ -1,0 +1,153 @@
+import Foundation
+
+// Reading Claude Code's local files. Read-only, and defensive: these are internal formats.
+//
+// - `~/.claude/sessions/<pid>.json`: one status file per running session.
+// - `~/.claude/projects/<project>/<sessionId>.jsonl`: the transcript, one JSON entry per line.
+//   Entries used here: `ai-title`, `last-prompt`, `system` with subtype `away_summary`,
+//   `cost-state`, and `assistant` messages (text and tool_use blocks).
+
+/// Extracts a session's details from the lines of its transcript.
+public enum TranscriptParser {
+    /// Longest reply or prompt kept, in characters.
+    private static let textLimit = 500
+
+    /// Reads the lines from the newest to the oldest and keeps the newest of each kind.
+    /// The first line may be cut (the text is usually a file's tail); invalid lines are skipped.
+    public static func details(in text: String) -> AgentDetails {
+        var details = AgentDetails()
+        var sawAssistant = false
+        for line in text.split(separator: "\n").reversed() {
+            if details.title == nil, line.contains("\"type\":\"ai-title\"") {
+                details.title = (object(line)?["aiTitle"] as? String).flatMap(clean)
+            } else if details.lastPrompt == nil, line.contains("\"type\":\"last-prompt\"") {
+                details.lastPrompt = (object(line)?["lastPrompt"] as? String).flatMap(clean)
+            } else if details.summary == nil, line.contains("\"subtype\":\"away_summary\"") {
+                details.summary = (object(line)?["content"] as? String).flatMap(clean)
+            } else if details.cost == nil, line.contains("\"type\":\"cost-state\"") {
+                details.cost = object(line).flatMap(cost)
+            } else if details.lastReply == nil, line.contains("\"type\":\"assistant\""),
+                      let entry = object(line), entry["isSidechain"] as? Bool != true,
+                      let blocks = (entry["message"] as? [String: Any])?["content"] as? [[String: Any]] {
+                // Only the newest assistant message can hold a pending tool call.
+                if !sawAssistant {
+                    details.pendingAction = blocks.last { $0["type"] as? String == "tool_use" }.flatMap(describe)
+                    sawAssistant = true
+                }
+                details.lastReply = blocks.last { $0["type"] as? String == "text" }
+                    .flatMap { $0["text"] as? String }
+                    .flatMap(clean)
+            }
+        }
+        return details
+    }
+
+    /// The newest `cost-state` entry in a chunk of transcript.
+    public static func cost(in text: String) -> AgentCost? {
+        for line in text.split(separator: "\n").reversed() where line.contains("\"type\":\"cost-state\"") {
+            if let cost = object(line).flatMap(cost) { return cost }
+        }
+        return nil
+    }
+
+    private static func object(_ line: Substring) -> [String: Any]? {
+        try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
+    }
+
+    private static func cost(_ entry: [String: Any]) -> AgentCost? {
+        guard let dollars = entry["totalCostUSD"] as? Double else { return nil }
+        return AgentCost(dollars: dollars,
+                         modelTime: (entry["totalAPIDuration"] as? Double ?? 0) / 1_000,
+                         linesAdded: entry["totalLinesAdded"] as? Int ?? 0,
+                         linesRemoved: entry["totalLinesRemoved"] as? Int ?? 0)
+    }
+
+    /// One line of text, without the whitespace runs of a multi-line message, cut to a readable length.
+    private static func clean(_ text: String) -> String? {
+        let line = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !line.isEmpty else { return nil }
+        return line.count > textLimit ? String(line.prefix(textLimit)) + "…" : line
+    }
+
+    /// What a tool call would do, in a few words: the command, the file, the address.
+    private static func describe(_ toolUse: [String: Any]) -> String? {
+        guard let name = toolUse["name"] as? String else { return nil }
+        let input = toolUse["input"] as? [String: Any] ?? [:]
+        let subject = ["command", "file_path", "url", "path", "description"]
+            .compactMap { input[$0] as? String }
+            .first
+            .flatMap(clean)
+        guard let subject else { return name }
+        let short = subject.count > 80 ? String(subject.prefix(80)) + "…" : subject
+        return name == "Bash" ? short : "\(name) : \(short)"
+    }
+}
+
+/// Reads the running sessions and their transcripts from Claude Code's folder.
+public struct AgentSessionReader: Sendable {
+    private let sessionsDirectory: URL
+    private let projectsDirectory: URL
+    /// How much of the end of a transcript is read each time. Transcripts can reach gigabytes.
+    private let tailLength: UInt64 = 512_000
+    /// How far back the one-off search for a session's cost may go, and in which steps.
+    private let costSearchLimit: UInt64 = 64_000_000
+    private let costSearchStep: UInt64 = 4_000_000
+
+    public init(claudeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")) {
+        sessionsDirectory = claudeDirectory.appendingPathComponent("sessions")
+        projectsDirectory = claudeDirectory.appendingPathComponent("projects")
+    }
+
+    /// Sessions whose process is still alive, without their transcript details.
+    public func sessions(isAlive: (Int32) -> Bool = AgentSessionReader.processIsAlive) -> [AgentSession] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: sessionsDirectory, includingPropertiesForKeys: nil)) ?? []
+        return files
+            .filter { $0.pathExtension == "json" }
+            .compactMap { try? Data(contentsOf: $0) }
+            .compactMap(AgentSession.decode)
+            .filter { isAlive($0.pid) }
+    }
+
+    /// The transcript of a session, wherever Claude Code filed it.
+    public func transcript(of session: AgentSession) -> URL? {
+        let projects = (try? FileManager.default.contentsOfDirectory(at: projectsDirectory, includingPropertiesForKeys: nil)) ?? []
+        return projects
+            .map { $0.appendingPathComponent("\(session.id).jsonl") }
+            .first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// What the end of a transcript says about its session.
+    public func details(in transcript: URL) -> AgentDetails {
+        guard let handle = try? FileHandle(forReadingFrom: transcript) else { return AgentDetails() }
+        defer { try? handle.close() }
+        let end = (try? handle.seekToEnd()) ?? 0
+        return TranscriptParser.details(in: read(handle, from: end > tailLength ? end - tailLength : 0, length: tailLength))
+    }
+
+    /// Looks further back for the last recorded cost, which Claude Code only writes now and then.
+    /// Expensive on big transcripts: call it once per session, off the main thread.
+    public func lastCost(in transcript: URL) -> AgentCost? {
+        guard let handle = try? FileHandle(forReadingFrom: transcript) else { return nil }
+        defer { try? handle.close() }
+        let end = (try? handle.seekToEnd()) ?? 0
+        var upper = end
+        while upper > 0, end - upper < costSearchLimit {
+            let lower = upper > costSearchStep ? upper - costSearchStep : 0
+            // Overlap the next chunk a little so an entry cut at the boundary is still found whole.
+            if let cost = TranscriptParser.cost(in: read(handle, from: lower, length: upper - lower + 4_096)) { return cost }
+            upper = lower
+        }
+        return nil
+    }
+
+    private func read(_ handle: FileHandle, from offset: UInt64, length: UInt64) -> String {
+        try? handle.seek(toOffset: offset)
+        let data = (try? handle.read(upToCount: Int(length))) ?? Data()
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// True when a process with this id exists (signal 0 probes without sending anything).
+    public static func processIsAlive(_ pid: Int32) -> Bool {
+        kill(pid, 0) == 0 || errno == EPERM
+    }
+}

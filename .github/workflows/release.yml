@@ -1,0 +1,49 @@
+# Publishes a release whenever the version in VERSION changes on main:
+# tests, builds Awaker.dmg, tags v<version> and attaches the DMG. The app's updater reads these releases.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: [VERSION]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # macOS 26 is required: the app uses Liquid Glass and Swift tools 6.2.
+    runs-on: macos-26
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version
+        id: version
+        run: echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether this version is already released
+        id: existing
+        run: |
+          if gh release view "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "v${{ steps.version.outputs.version }} is already released: nothing to do."
+          fi
+
+      - name: Test
+        if: steps.existing.outputs.found != 'true'
+        run: Scripts/test.sh
+
+      - name: Build the DMG
+        if: steps.existing.outputs.found != 'true'
+        run: Scripts/make-dmg.sh
+
+      - name: Publish the release
+        if: steps.existing.outputs.found != 'true'
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" build/Awaker.dmg \
+            --target "$GITHUB_SHA" \
+            --title "Awaker ${{ steps.version.outputs.version }}" \
+            --generate-notes

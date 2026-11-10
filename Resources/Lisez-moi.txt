@@ -1,0 +1,36 @@
+AWAKER
+Garde ton Mac éveillé, même capot fermé, pour que Claude Code et tes tâches longues continuent de tourner.
+
+Il te faut : un Mac Apple Silicon (M1 ou plus récent) sous macOS 26.
+
+
+INSTALLER
+
+1. Glisse Awaker dans le dossier Applications.
+2. Ouvre Awaker depuis Applications.
+3. macOS affiche un message du type « Awaker n'a pas été ouvert » : c'est normal, l'app n'est pas
+   distribuée par l'App Store. Clique sur « Terminé » (pas sur « Placer dans la corbeille »).
+4. Ouvre Réglages Système > Confidentialité et sécurité, descends jusqu'à la section Sécurité,
+   et clique sur « Ouvrir quand même » à côté d'Awaker. Confirme avec ton mot de passe.
+   C'est à faire une seule fois.
+
+Si tu préfères le Terminal, cette commande fait la même chose :
+   xattr -dr com.apple.quarantine /Applications/Awaker.app
+
+
+PREMIÈRE UTILISATION
+
+1. Dans Awaker, clique sur « Installer l'autorisation… » et tape ton mot de passe administrateur.
+   C'est demandé une seule fois. Garder le Mac éveillé capot fermé passe par la commande système
+   pmset, qui demande les droits administrateur ; l'autorisation ne couvre que cette commande.
+2. Clique sur « Lancer la session », puis ferme le capot : le Mac reste éveillé.
+3. L'icône d'Awaker reste dans la barre des menus pour lancer ou arrêter une session sans ouvrir la fenêtre.
+
+
+À SAVOIR
+
+- Capot fermé, le Mac ne dort plus : ne le mets pas dans un sac pendant une session, il chauffe.
+- Awaker s'arrête tout seul si la batterie est faible ou si le Mac surchauffe (réglable dans Réglages).
+- Le mode auto (Réglages) lance une session dès que Claude Code tourne et l'arrête une minute après.
+- Quitter Awaker rend toujours au Mac sa mise en veille normale.
+- Pour désinstaller : dans Awaker, Réglages > « Retirer » l'autorisation, puis mets l'app à la corbeille.
