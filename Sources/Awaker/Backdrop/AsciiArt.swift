@@ -288,12 +288,15 @@ private struct Samples {
         let fill = max(viewSize.width / imageSize.width, viewSize.height / imageSize.height)
         let drawn = CGSize(width: imageSize.width * fill, height: imageSize.height * fill)
         let origin = CGPoint(x: (viewSize.width - drawn.width) / 2, y: (viewSize.height - drawn.height) / 2)
-        // To grid pixels. CGContext's origin is bottom-left; the view's is top-left.
-        let toPixels = CGFloat(width) / gridSize.width
+        // To grid pixels. Sub-cells are not square (a cell is 3 × 5 of them), so each axis has its own scale:
+        // one scale for both stretched the art vertically and slid it off the picture behind.
+        // CGContext's origin is bottom-left; the view's is top-left.
+        let toPixelsX = CGFloat(width) / gridSize.width
+        let toPixelsY = CGFloat(height) / gridSize.height
         context.interpolationQuality = .low
-        context.draw(image, in: CGRect(x: origin.x * toPixels,
-                                       y: (gridSize.height - origin.y - drawn.height) * toPixels,
-                                       width: drawn.width * toPixels, height: drawn.height * toPixels))
+        context.draw(image, in: CGRect(x: origin.x * toPixelsX,
+                                       y: (gridSize.height - origin.y - drawn.height) * toPixelsY,
+                                       width: drawn.width * toPixelsX, height: drawn.height * toPixelsY))
         guard let data = context.data?.bindMemory(to: UInt8.self, capacity: width * height * 4) else { return nil }
         let cells = Array(UnsafeBufferPointer(start: data, count: width * height * 4))
         self.width = width
