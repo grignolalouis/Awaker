@@ -81,7 +81,7 @@ enum Backdrop {
 }
 
 /// The window's background: the illustration (animated when a loop is bundled), blurred and dimmed,
-/// redrawn on top as ASCII art. The loop only plays while the window is visible, and not at all with Reduce Motion.
+/// redrawn on top as ASCII art. The loop only plays while the window is visible, and not at all with Reduce Motion or when switched off in Settings.
 struct BackdropView: View {
     /// Nothing animates while nobody can see it: window covered or minimized, or the screen off
     /// (which is the normal state of a Mac kept awake with its lid closed).
@@ -89,21 +89,23 @@ struct BackdropView: View {
     @State private var isScreenAwake = CGDisplayIsAsleep(CGMainDisplayID()) == 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(AppSettings.self) private var settings
-    /// The loop of the scene on screen. Nil with Reduce Motion, and for a scene without a loop.
+    /// The loop of the scene on screen. Nil when motion is off, and for a scene without a loop.
     @State private var video: VideoLoop?
 
-    private var isAnimating: Bool { isWindowVisible && isScreenAwake && !reduceMotion }
+    /// The picture stays still with the system's Reduce Motion, or when the user switched the animation off in Settings.
+    private var isStill: Bool { reduceMotion || !settings.animatedBackdrop }
+    private var isAnimating: Bool { isWindowVisible && isScreenAwake && !isStill }
 
     /// Everything the player depends on. When any of it changes, `updateVideo` puts the player in step.
     private struct Playback: Equatable {
         let scene: BackdropScene
         let isAnimating: Bool
-        let reduceMotion: Bool
+        let isStill: Bool
     }
 
     private func updateVideo(_ playback: Playback) {
         // Asking for another scene (or none) pauses and releases the previous player.
-        video = Backdrop.video(of: playback.reduceMotion ? nil : playback.scene)
+        video = Backdrop.video(of: playback.isStill ? nil : playback.scene)
         if playback.isAnimating { video?.play() } else { video?.pause() }
     }
 
@@ -130,12 +132,13 @@ struct BackdropView: View {
                         .mask { WindowButtonsClearing() }
                 }
                 // A different scene is a different picture and player: start the views afresh.
-                .id(scene.id)
+                // The same goes for switching motion off, so the art is redrawn from the still picture.
+                .id("\(scene.id) \(isStill)")
             } else {
                 Color.black
             }
         }
-        .onChange(of: Playback(scene: scene, isAnimating: isAnimating, reduceMotion: reduceMotion), initial: true) { _, playback in
+        .onChange(of: Playback(scene: scene, isAnimating: isAnimating, isStill: isStill), initial: true) { _, playback in
             updateVideo(playback)
         }
         .onDisappear { video?.pause() }

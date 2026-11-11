@@ -103,6 +103,10 @@ struct SettingsView: View {
                     }
                 }
                 .padding(.vertical, 4)
+                Toggle(isOn: $settings.animatedBackdrop) {
+                    Text("Animated background")
+                    Text("Off, the picture stays still and the window uses much less processor.")
+                }
             }
 
             Section {
