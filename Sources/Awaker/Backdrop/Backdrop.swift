@@ -156,21 +156,25 @@ struct BackdropView: View {
     }
 }
 
-/// Everything but a soft-edged patch behind the window's close, minimize and zoom buttons.
-/// The buttons are translucent (more so when the window is inactive): characters showing through them
-/// made them hard to see, so no characters are drawn there.
+/// Everything but three small discs, exactly under the window's close, minimize and zoom buttons.
+/// The buttons are translucent when the window is inactive: characters showing through made them hard to see.
+/// One wide soft patch around the three did the job but read as a dark smudge on the picture, so each
+/// button now hides only what is under itself.
 private struct WindowButtonsClearing: View {
-    /// Where the three buttons sit in a window with a unified toolbar, with a little room around them.
-    private let patch = CGRect(x: 12, y: 12, width: 86, height: 44)
+    /// Centers of the three buttons in a window with a unified toolbar on macOS 26, and the disc cleared under each.
+    private let centers: [CGFloat] = [26, 49, 72]
+    private let centerY: CGFloat = 26
+    private let diameter: CGFloat = 15
 
     var body: some View {
         Rectangle()
             .overlay(alignment: .topLeading) {
-                Capsule()
-                    .frame(width: patch.width, height: patch.height)
-                    .offset(x: patch.minX, y: patch.minY)
-                    .blur(radius: 5)
-                    .blendMode(.destinationOut)
+                ForEach(centers, id: \.self) { x in
+                    Circle()
+                        .frame(width: diameter, height: diameter)
+                        .offset(x: x - diameter / 2, y: centerY - diameter / 2)
+                        .blendMode(.destinationOut)
+                }
             }
             .compositingGroup()
     }
