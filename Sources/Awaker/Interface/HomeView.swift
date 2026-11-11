@@ -46,7 +46,7 @@ struct HomeView: View {
     }
 }
 
-/// How long the Mac has been kept awake, and until when.
+/// How long the Mac has been kept awake, and why.
 private struct SessionTimer: View {
     let start: Date
     @Environment(AwakeController.self) private var awake
@@ -56,15 +56,14 @@ private struct SessionTimer: View {
             Text(start, style: .timer)
                 .font(.system(size: 64, weight: .semibold, design: .rounded))
                 .monospacedDigit()
-            Text(until)
-                .font(.title3.weight(.medium))
+            if let reason = awake.reason {
+                Text(reason.sentence())
+                    .font(.title3.weight(.medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
         }
         .shadow(color: .black.opacity(0.35), radius: 12, y: 2)
-    }
-
-    private var until: String {
-        if let end = awake.endsAt { return "Until \(Format.time(end))" }
-        return awake.trigger == .auto ? "While an agent is working" : "No limit"
     }
 }
 

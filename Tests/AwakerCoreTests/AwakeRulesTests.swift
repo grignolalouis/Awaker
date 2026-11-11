@@ -119,3 +119,38 @@ import Testing
         #expect(Format.clock(65 * 60) == "1:05")
     }
 }
+
+@Suite struct AwakeReasonTests {
+    private let end = Date(timeIntervalSince1970: 1_000_000)
+    private let time: (Date) -> String = { _ in "14:30" }
+
+    private func sentence(_ trigger: Trigger, endsAt: Date? = nil, busy: [String] = [], autoStopsAt: Date? = nil) -> String {
+        AwakeReason(trigger: trigger, endsAt: endsAt, busyAgents: busy, autoStopsAt: autoStopsAt).sentence(time: time)
+    }
+
+    @Test func aManualSessionSaysTheUserStartedItAndUntilWhen() {
+        #expect(sentence(.manual, endsAt: end) == "Started by you · until 14:30")
+        #expect(sentence(.manual) == "Started by you · no time limit")
+        // The agents at work are not the reason: stopping them would not let the Mac sleep.
+        #expect(sentence(.manual, busy: ["Tests"]) == "Started by you · no time limit")
+    }
+
+    @Test func anAutoSessionNamesTheAgentsThatHoldTheMac() {
+        #expect(sentence(.auto, busy: ["Tests"]) == "Kept awake by “Tests”")
+        #expect(sentence(.auto, busy: ["Tests", "Deploy"]) == "Kept awake by “Tests” and 1 other agent")
+        #expect(sentence(.auto, busy: ["Tests", "Deploy", "Docs"]) == "Kept awake by “Tests” and 2 other agents")
+    }
+
+    @Test func anAutoSessionWithNoAgentLeftSaysWhenSleepReturns() {
+        #expect(sentence(.auto, autoStopsAt: end) == "No agent working · normal sleep at 14:30")
+        #expect(sentence(.auto) == "No agent working · normal sleep returns soon")
+    }
+
+    @Test func autoModeKnowsWhenItWillStop() {
+        var mode = AutoMode(grace: 180)
+        _ = mode.step(now: end, isEnabled: true, busyAgents: 1, isAwake: true, isAutoSession: true)
+        #expect(mode.stopsAt == nil)
+        _ = mode.step(now: end, isEnabled: true, busyAgents: 0, isAwake: true, isAutoSession: true)
+        #expect(mode.stopsAt == end.addingTimeInterval(180))
+    }
+}

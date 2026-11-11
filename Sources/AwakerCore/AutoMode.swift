@@ -20,6 +20,11 @@ public struct AutoMode: Equatable, Sendable {
         self.grace = grace
     }
 
+    /// When an auto session ends if no agent goes back to work. Nil while one is working.
+    public var stopsAt: Date? {
+        idleSince?.addingTimeInterval(grace)
+    }
+
     /// Call when the user stops a session by hand.
     public mutating func userStopped() {
         isSuppressed = true

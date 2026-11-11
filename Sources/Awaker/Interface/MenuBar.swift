@@ -14,6 +14,9 @@ struct MenuBarContent: View {
     var body: some View {
         @Bindable var settings = settings
         Text(status)
+        if let reason = awake.reason {
+            Text(reason.sentence())
+        }
         if let error = awake.lastError {
             Text("⚠️ \(error)")
         }
@@ -55,10 +58,7 @@ struct MenuBarContent: View {
         guard awake.isActive, let start = awake.startedAt else {
             return "Idle · \(Format.plural(monitor.busyCount, "agent working", "agents working"))"
         }
-        var text = "Awake for \(Format.duration(awake.now.timeIntervalSince(start)))"
-        if let end = awake.endsAt { text += " · until \(Format.time(end))" }
-        if awake.trigger == .auto { text += " · auto" }
-        return text
+        return "Awake for \(Format.duration(awake.now.timeIntervalSince(start)))"
     }
 }
 

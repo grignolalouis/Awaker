@@ -21,6 +21,8 @@ final class AwakeController {
     private(set) var now = Date()
     private(set) var battery: BatteryInfo?
     private(set) var isThermalCritical = false
+    /// When auto mode gives the Mac back, as of the last tick.
+    private(set) var autoStopsAt: Date?
 
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let history: HistoryStore
@@ -57,6 +59,13 @@ final class AwakeController {
     var startBlocker: String? {
         if !isAuthorized { return "Install the authorization in Settings first." }
         return settings.powerPolicy.blocker(battery: battery, isThermalCritical: isThermalCritical)?.blockerMessage(battery: battery)
+    }
+
+    /// Why the Mac is kept awake right now. Nil when it isn't.
+    var reason: AwakeReason? {
+        guard isActive, let trigger else { return nil }
+        let busy = agents.agents.filter(\.state.keepsMacBusy).map(\.displayTitle)
+        return AwakeReason(trigger: trigger, endsAt: endsAt, busyAgents: busy, autoStopsAt: autoStopsAt)
     }
 
     /// Call once at launch.
@@ -163,6 +172,7 @@ final class AwakeController {
         case .stop: deactivate(.agentsIdle)
         case .nothing: break
         }
+        autoStopsAt = autoMode.stopsAt
     }
 
     private func refreshReadings() {
