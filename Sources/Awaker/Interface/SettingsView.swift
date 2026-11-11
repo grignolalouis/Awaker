@@ -6,7 +6,9 @@ struct SettingsView: View {
     @Environment(AwakeController.self) private var awake
     @Environment(AppSettings.self) private var settings
     @Environment(Updater.self) private var updater
-
+    @Environment(AgentMonitor.self) private var monitor
+    /// Switches the window to the Home screen, where a recap shows.
+    var showHome: () -> Void = {}
 
     var body: some View {
         // The form doesn't scroll itself: it takes its natural height, and the page scrolls around it.
@@ -157,6 +159,19 @@ struct SettingsView: View {
                 Toggle(isOn: $settings.agentNotifications) {
                     Text("Agent notifications")
                     Text("When an agent finishes or needs you, and a recap when you come back to the Mac.")
+                }
+                Toggle(isOn: $settings.writtenRecap) {
+                    Text("Recap written by Claude Code")
+                    Text("When you come back, your own Claude Code sums up every session in a few lines. Uses a little of your Claude usage each time.")
+                }
+                LabeledContent {
+                    Button("Write a recap now") {
+                        monitor.writeRecapNow()
+                        showHome()
+                    }
+                } label: {
+                    Text("Try it")
+                    Text("Sums up the last 8 hours on the Home screen.")
                 }
                 Toggle("Open at login",
                        isOn: Binding(get: { awake.launchesAtLogin }, set: { awake.setLaunchesAtLogin($0) }))

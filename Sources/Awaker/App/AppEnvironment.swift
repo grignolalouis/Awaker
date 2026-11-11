@@ -28,8 +28,8 @@ final class AppEnvironment {
         settings = AppSettings()
         history = isSnapshot ? HistoryStore(sessions: DemoData.sessions(now: Date())) : HistoryStore(files: .applicationSupport)
         agents = usesLiveAgents
-            ? AgentMonitor(settings: settings)
-            : AgentMonitor(settings: settings, preview: DemoData.agents(now: Date()), recap: DemoData.recap(now: Date()))
+            ? AgentMonitor(settings: settings, recapWriter: isSnapshot ? nil : .live)
+            : AgentMonitor(settings: settings, preview: DemoData.agents(now: Date()), recap: DemoData.recap(now: Date()), written: DemoData.writtenRecap)
         awake = AwakeController(settings: settings, history: history, agents: agents, system: isSnapshot ? .inert : .live)
         updater = Updater(isPreview: isSnapshot)
         // An update relaunches the app: the running session must pick up where it left off.

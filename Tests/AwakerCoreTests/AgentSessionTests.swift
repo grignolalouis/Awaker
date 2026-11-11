@@ -322,3 +322,69 @@ import Testing
         #expect(Format.dollars(184.2) == "$184")
     }
 }
+
+@Suite struct WrittenRecapTests {
+    private let left = Date(timeIntervalSince1970: 1_000_000)
+
+    private func agent(_ id: String, _ state: AgentState, secondsAfterLeaving: TimeInterval, _ details: AgentDetails) -> AgentSession {
+        AgentSession(id: id, pid: 1, directory: URL(fileURLWithPath: "/tmp/nexus"), name: id, state: state,
+                     stateSince: left.addingTimeInterval(secondsAfterLeaving), details: details)
+    }
+
+    @Test func theMaterialHoldsOnlySessionsThatMovedOrAreActive() throws {
+        let agents = [
+            agent("a", .finished, secondsAfterLeaving: 60, AgentDetails(title: "Migration", lastPrompt: "run it", lastReply: "Done.")),
+            agent("b", .finished, secondsAfterLeaving: -60, AgentDetails(title: "Old one")),
+            agent("c", .waiting(tool: "Bash"), secondsAfterLeaving: -60, AgentDetails(title: "Push", pendingAction: "git push")),
+        ]
+        let material = try #require(WrittenRecap.material(agents: agents, leftAt: left))
+
+        #expect(material.contains("Migration") && material.contains("Done."))
+        #expect(!material.contains("Old one"))
+        #expect(material.contains("git push") && material.contains("permission to use Bash"))
+    }
+
+    @Test func thereIsNoMaterialWhenNothingMoved() {
+        let agents = [agent("b", .finished, secondsAfterLeaving: -60, AgentDetails(title: "Old one"))]
+        #expect(WrittenRecap.material(agents: agents, leftAt: left) == nil)
+    }
+
+    @Test func aLongReplyKeepsItsEnd() throws {
+        let reply = String(repeating: "x", count: 5_000) + " The tests fail."
+        let agents = [agent("a", .finished, secondsAfterLeaving: 60, AgentDetails(lastReply: reply))]
+        let material = try #require(WrittenRecap.material(agents: agents, leftAt: left))
+
+        #expect(material.contains("The tests fail."))
+        #expect(material.count < 1_500)
+    }
+
+    @Test func readsTheRecapFromTheCommandOutput() {
+        #expect(WrittenRecap.text(fromOutput: #"{"is_error": false, "result": " Migration: done.\n"}"#) == "Migration: done.")
+        #expect(WrittenRecap.text(fromOutput: #"{"is_error": true, "result": "Not logged in"}"#) == nil)
+        #expect(WrittenRecap.text(fromOutput: "not json") == nil)
+        #expect(WrittenRecap.text(fromOutput: #"{"result": ""}"#) == nil)
+    }
+
+    @Test func aRecapAskedForIsKeptEvenWhenNothingHappened() {
+        let recap = AwayRecap(counting: [], leftAt: left, now: left.addingTimeInterval(600))
+        #expect(recap.sentence == "nothing finished, nobody waiting.")
+        #expect(AwayRecap(agents: [], leftAt: left, now: left.addingTimeInterval(600)) == nil)
+    }
+}
+
+@Suite struct WrittenRecapLinesTests {
+    @Test func eachLineIsCutAfterTheSessionTitle() {
+        let lines = WrittenRecap.lines(of: "Migration: done.\n\nDesign system @ui : ton retour est attendu : Activity.\n")
+
+        #expect(lines == [
+            WrittenRecap.Line(title: "Migration", text: "Done."),
+            WrittenRecap.Line(title: "Design system @ui", text: "Ton retour est attendu : Activity."),
+        ])
+    }
+
+    @Test func aLineWithoutATitleIsKeptWhole() {
+        let long = String(repeating: "word ", count: 20) + ": late colon"
+        #expect(WrittenRecap.lines(of: "Nothing to report.") == [WrittenRecap.Line(title: nil, text: "Nothing to report.")])
+        #expect(WrittenRecap.lines(of: long).first?.title == nil)
+    }
+}

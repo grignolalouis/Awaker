@@ -230,14 +230,20 @@ public struct AwayRecap: Equatable, Sendable {
 
     /// Nil when nothing worth telling happened.
     public init?(agents: [AgentSession], leftAt: Date, now: Date) {
+        self.init(counting: agents, leftAt: leftAt, now: now)
+        if finished.isEmpty && waiting.isEmpty { return nil }
+    }
+
+    /// The same count, kept even when it is empty: for a recap the user asked for.
+    public init(counting agents: [AgentSession], leftAt: Date, now: Date) {
         finished = agents.filter { !$0.state.keepsMacBusy && !$0.state.needsUser && $0.stateSince > leftAt }.map(\.displayTitle)
         waiting = agents.filter(\.state.needsUser).map(\.displayTitle)
         duration = now.timeIntervalSince(leftAt)
-        if finished.isEmpty && waiting.isEmpty { return nil }
     }
 
     /// "2 agents finished, 1 needs you."
     public var sentence: String {
+        if finished.isEmpty && waiting.isEmpty { return "nothing finished, nobody waiting." }
         var parts: [String] = []
         if !finished.isEmpty { parts.append(Format.plural(finished.count, "agent finished", "agents finished")) }
         if !waiting.isEmpty { parts.append(Format.plural(waiting.count, "needs you", "need you")) }

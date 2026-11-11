@@ -13,9 +13,19 @@ final class AgentMonitor {
     private(set) var agents: [AgentSession] = []
     /// What happened while the screen was off. Shown until the user dismisses it.
     private(set) var recap: AwayRecap?
+    /// The same recap in plain language, written by the user's Claude Code when the setting is on.
+    private(set) var writtenRecap: WrittenRecapState?
+
+    enum WrittenRecapState: Equatable {
+        case writing
+        case written(String)
+        case failed(String)
+    }
 
     @ObservationIgnored private let reader = AgentSessionReader()
     @ObservationIgnored private let settings: AppSettings
+    /// Nil in snapshots: they must never spend the user's usage.
+    @ObservationIgnored private let recapWriter: RecapWriter?
     @ObservationIgnored private var timer: Timer?
     /// What each transcript said, with the date it was read at, so big transcripts aren't re-read needlessly.
     @ObservationIgnored private var cache: [String: CachedDetails] = [:]
@@ -44,13 +54,16 @@ final class AgentMonitor {
         var searchedCost: Bool
     }
 
-    init(settings: AppSettings) {
+    init(settings: AppSettings, recapWriter: RecapWriter?) {
         self.settings = settings
+        self.recapWriter = recapWriter
     }
 
     /// Fixed sessions for previews and snapshots.
-    init(settings: AppSettings, preview agents: [AgentSession], recap: AwayRecap? = nil) {
+    init(settings: AppSettings, preview agents: [AgentSession], recap: AwayRecap? = nil, written: String? = nil) {
+        writtenRecap = written.map { .written($0) }
         self.settings = settings
+        recapWriter = nil
         self.agents = agents.sortedForDisplay()
         self.recap = recap
         hasBaseline = true
@@ -75,6 +88,36 @@ final class AgentMonitor {
 
     func dismissRecap() {
         recap = nil
+        writtenRecap = nil
+    }
+
+    /// Writes a recap of the last hours now, whatever the setting: the user asked to see what it gives.
+    func writeRecapNow() {
+        let now = Date()
+        let leftAt = now.addingTimeInterval(-Self.trialSpan)
+        recap = AwayRecap(counting: agents, leftAt: leftAt, now: now)
+        writeRecap(since: leftAt)
+    }
+
+    /// How far back "Write a recap now" looks.
+    private static let trialSpan: TimeInterval = 8 * 3_600
+
+    private func writeRecap(since leftAt: Date) {
+        guard let recapWriter else { return }
+        guard let material = WrittenRecap.material(agents: agents, leftAt: leftAt) else {
+            writtenRecap = .failed("No session moved in that time.")
+            return
+        }
+        writtenRecap = .writing
+        Task {
+            let result = await recapWriter.write(material)
+            // Dismissed meanwhile: the answer has nowhere to go.
+            guard recap != nil, writtenRecap == .writing else { return }
+            switch result {
+            case .success(let text): writtenRecap = .written(text)
+            case .failure(let failure): writtenRecap = .failed(failure.message)
+            }
+        }
     }
 
     // MARK: Reading
@@ -177,6 +220,8 @@ final class AgentMonitor {
             if now.timeIntervalSince(absence.since) >= minimumAbsence,
                let recap = AwayRecap(agents: agents, leftAt: absence.since, now: now) {
                 self.recap = recap
+                writtenRecap = nil
+                if settings.writtenRecap { writeRecap(since: absence.since) }
                 if settings.agentNotifications {
                     Notifier.post("While you were away (\(Format.duration(recap.duration)))", recap.sentence)
                 }

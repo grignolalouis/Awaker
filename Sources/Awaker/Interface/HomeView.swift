@@ -34,7 +34,8 @@ struct HomeView: View {
                 }
             }
             if let recap = monitor.recap {
-                RecapBanner(recap: recap) { monitor.dismissRecap() }
+                RecapBanner(recap: recap, written: monitor.writtenRecap) { monitor.dismissRecap() }
+                    .frame(maxWidth: agentsWidth)
             }
             if !monitor.agents.isEmpty {
                 AgentsPanel()

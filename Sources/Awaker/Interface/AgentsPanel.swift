@@ -255,22 +255,51 @@ private struct DetailList: View {
 /// What happened while the user was away: one glass line with a way to dismiss it.
 struct RecapBanner: View {
     let recap: AwayRecap
+    /// The recap in plain language, when the user's Claude Code writes one.
+    var written: AgentMonitor.WrittenRecapState?
     let dismiss: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "moon.zzz.fill")
-                .foregroundStyle(.secondary)
-            Text("While you were away (\(Format.duration(recap.duration))): \(recap.sentence)")
-                .lineLimit(2)
-            Button("Dismiss", systemImage: "xmark", action: dismiss)
-                .labelStyle(.iconOnly)
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "moon.zzz.fill")
+                    .foregroundStyle(.secondary)
+                Text("While you were away (\(Format.duration(recap.duration))): \(recap.sentence)")
+                    .lineLimit(2)
+                // Alone, the line stays a compact pill; with a written recap it heads a panel.
+                if written != nil { Spacer(minLength: 0) }
+                Button("Dismiss", systemImage: "xmark", action: dismiss)
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+            }
+            switch written {
+            case .writing:
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Claude Code is writing the recap…").foregroundStyle(.secondary)
+                }
+            case .written(let text):
+                Divider()
+                ForEach(WrittenRecap.lines(of: text)) { line in
+                    VStack(alignment: .leading, spacing: 2) {
+                        if let title = line.title {
+                            Text(title).fontWeight(.semibold)
+                        }
+                        Text(line.text)
+                            .foregroundStyle(line.title == nil ? .primary : .secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            case .failed(let message):
+                Text(message).foregroundStyle(.secondary)
+            case nil:
+                EmptyView()
+            }
         }
         .font(.callout)
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .glassEffect()
+        .padding(.vertical, written == nil ? 10 : 14)
+        .glassEffect(in: .rect(cornerRadius: written == nil ? 22 : 18))
     }
 }

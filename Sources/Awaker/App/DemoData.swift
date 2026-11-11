@@ -39,6 +39,12 @@ enum DemoData {
         AwayRecap(agents: agents(now: now), leftAt: now.addingTimeInterval(-4_800), now: now)
     }
 
+    static let writtenRecap = """
+        Stripe webhooks migration: waiting for your permission to push the branch. Tests pass.
+        HubSpot seats and plan collector: the PR is green and the review is requested again.
+        Contacts screen redesign: still working on sorting by last activity, with two helpers.
+        """
+
     /// Two weeks of sessions, some manual, some automatic.
     static func sessions(now: Date, calendar: Calendar = .current) -> [AwakeSession] {
         let today = calendar.startOfDay(for: now)

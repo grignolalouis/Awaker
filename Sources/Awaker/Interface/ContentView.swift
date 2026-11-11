@@ -38,7 +38,7 @@ struct ContentView: View {
                 switch screen {
                 case .home: HomeView()
                 case .history: HistoryView()
-                case .settings: SettingsView()
+                case .settings: SettingsView(showHome: { screen = .home })
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

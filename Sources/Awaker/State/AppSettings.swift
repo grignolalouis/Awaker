@@ -20,6 +20,8 @@ final class AppSettings {
     var notifications: Bool { didSet { defaults.set(notifications, forKey: Key.notifications) } }
     /// Tell the user when a Claude Code session finishes or needs them.
     var agentNotifications: Bool { didSet { defaults.set(agentNotifications, forKey: Key.agentNotifications) } }
+    /// Have the user's own Claude Code write the away recap. Off by default: it draws on their usage.
+    var writtenRecap: Bool { didSet { defaults.set(writtenRecap, forKey: Key.writtenRecap) } }
 
     /// The picture behind the window: the id of a `BackdropScene`.
     var backdrop: String { didSet { defaults.set(backdrop, forKey: Key.backdrop) } }
@@ -40,6 +42,7 @@ final class AppSettings {
         static let thermalGuard = "thermalGuard"
         static let notifications = "notifications"
         static let agentNotifications = "agentNotifications"
+        static let writtenRecap = "writtenRecap"
         static let hiddenSkins = "hiddenSkins"
         static let backdrop = "backdrop"
         static let animatedBackdrop = "animatedBackdrop"
@@ -66,6 +69,7 @@ final class AppSettings {
         thermalGuard = defaults.bool(forKey: Key.thermalGuard)
         notifications = defaults.bool(forKey: Key.notifications)
         agentNotifications = defaults.bool(forKey: Key.agentNotifications)
+        writtenRecap = defaults.bool(forKey: Key.writtenRecap)
         backdrop = defaults.string(forKey: Key.backdrop) ?? Backdrop.scenes[0].id
         animatedBackdrop = defaults.bool(forKey: Key.animatedBackdrop)
         hiddenSkins = Set(defaults.stringArray(forKey: Key.hiddenSkins) ?? [])
