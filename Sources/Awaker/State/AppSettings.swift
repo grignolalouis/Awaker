@@ -20,6 +20,8 @@ final class AppSettings {
     var notifications: Bool { didSet { defaults.set(notifications, forKey: Key.notifications) } }
     /// Tell the user when a Claude Code session finishes or needs them.
     var agentNotifications: Bool { didSet { defaults.set(agentNotifications, forKey: Key.agentNotifications) } }
+    /// Whether the Home screen lists the agents. Off, only the pill counts them.
+    var showsAgents: Bool { didSet { defaults.set(showsAgents, forKey: Key.showsAgents) } }
     /// Have the user's own Claude Code write the away recap. Off by default: it draws on their usage.
     var writtenRecap: Bool { didSet { defaults.set(writtenRecap, forKey: Key.writtenRecap) } }
 
@@ -43,6 +45,7 @@ final class AppSettings {
         static let notifications = "notifications"
         static let agentNotifications = "agentNotifications"
         static let writtenRecap = "writtenRecap"
+        static let showsAgents = "showsAgents"
         static let hiddenSkins = "hiddenSkins"
         static let backdrop = "backdrop"
         static let animatedBackdrop = "animatedBackdrop"
@@ -60,6 +63,7 @@ final class AppSettings {
             Key.notifications: true,
             Key.agentNotifications: true,
             Key.animatedBackdrop: true,
+            Key.showsAgents: true,
         ])
         defaultMinutes = defaults.integer(forKey: Key.defaultMinutes)
         autoMode = defaults.bool(forKey: Key.autoMode)
@@ -70,6 +74,7 @@ final class AppSettings {
         notifications = defaults.bool(forKey: Key.notifications)
         agentNotifications = defaults.bool(forKey: Key.agentNotifications)
         writtenRecap = defaults.bool(forKey: Key.writtenRecap)
+        showsAgents = defaults.bool(forKey: Key.showsAgents)
         backdrop = defaults.string(forKey: Key.backdrop) ?? Backdrop.scenes[0].id
         animatedBackdrop = defaults.bool(forKey: Key.animatedBackdrop)
         hiddenSkins = Set(defaults.stringArray(forKey: Key.hiddenSkins) ?? [])

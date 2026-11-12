@@ -6,6 +6,7 @@ struct HomeView: View {
     @Environment(AwakeController.self) private var awake
     @Environment(AgentMonitor.self) private var monitor
     @Environment(Updater.self) private var updater
+    @Environment(AppSettings.self) private var settings
 
     private let glassSpacing: CGFloat = 12
     private let agentsWidth: CGFloat = 680
@@ -37,7 +38,7 @@ struct HomeView: View {
                 RecapBanner(recap: recap, written: monitor.writtenRecap) { monitor.dismissRecap() }
                     .frame(maxWidth: agentsWidth)
             }
-            if !monitor.agents.isEmpty {
+            if settings.showsAgents && !monitor.agents.isEmpty {
                 AgentsPanel()
                     .frame(maxWidth: agentsWidth)
             }

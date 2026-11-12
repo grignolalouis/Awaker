@@ -112,6 +112,10 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle(isOn: $settings.showsAgents) {
+                    Text("Show agents on Home")
+                    Text("Off, the Home screen keeps only the count. The menu bar still lists the agents that need you.")
+                }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 52), spacing: 8)], spacing: 8) {
                     ForEach(AvatarSkin.all) { skin in
                         let isOn = !settings.hiddenSkins.contains(skin.name)
