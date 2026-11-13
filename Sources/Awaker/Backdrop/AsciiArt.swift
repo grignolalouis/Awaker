@@ -307,7 +307,7 @@ final class AsciiArtist {
 /// Handing the window server an sRGB bitmap made it convert every pixel of every frame to the screen's
 /// colors, which cost about half of the app's processor time. The art has one color per character, so the
 /// conversion is done here per character instead, through a table CoreGraphics fills once per screen.
-private struct ColorTable {
+struct ColorTable {
     static let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
 
     let space: CGColorSpace
@@ -360,7 +360,7 @@ private struct ColorTable {
 }
 
 /// The part of an image a view shows, reduced to one pixel per sub-cell.
-private struct Samples {
+struct Samples {
     struct Color {
         let red, green, blue: CGFloat
     }

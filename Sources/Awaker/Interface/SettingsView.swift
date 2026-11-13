@@ -106,6 +106,18 @@ struct SettingsView: View {
                     }
                 }
                 .padding(.vertical, 4)
+                Picker("Style", selection: $settings.backdropStyle) {
+                    ForEach(BackdropStyle.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
+                }
+                if settings.backdropStyle == .dither {
+                    Picker("Dot size", selection: $settings.ditherDot) {
+                        ForEach(Ditherer.dotChoices, id: \.self) { dot in
+                            Text("\(dot) px").tag(dot)
+                        }
+                    }
+                }
                 Toggle(isOn: $settings.animatedBackdrop) {
                     Text("Animated background")
                     Text("Off, the picture stays still and the window uses much less processor.")

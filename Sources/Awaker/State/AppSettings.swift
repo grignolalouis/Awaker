@@ -27,6 +27,10 @@ final class AppSettings {
 
     /// The picture behind the window: the id of a `BackdropScene`.
     var backdrop: String { didSet { defaults.set(backdrop, forKey: Key.backdrop) } }
+    /// How the picture is redrawn: as characters, or as dots of a few colours.
+    var backdropStyle: BackdropStyle { didSet { defaults.set(backdropStyle.rawValue, forKey: Key.backdropStyle) } }
+    /// Side of a dot of the dithered picture, in screen pixels (`Ditherer.dotChoices`).
+    var ditherDot: Int { didSet { defaults.set(ditherDot, forKey: Key.ditherDot) } }
     /// Whether the picture moves. Off, it is drawn once and costs nothing afterwards.
     var animatedBackdrop: Bool { didSet { defaults.set(animatedBackdrop, forKey: Key.animatedBackdrop) } }
     /// Names of the avatar skins the user doesn't want agents to wear.
@@ -49,6 +53,8 @@ final class AppSettings {
         static let hiddenSkins = "hiddenSkins"
         static let backdrop = "backdrop"
         static let animatedBackdrop = "animatedBackdrop"
+        static let backdropStyle = "backdropStyle"
+        static let ditherDot = "ditherDot"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -63,6 +69,7 @@ final class AppSettings {
             Key.notifications: true,
             Key.agentNotifications: true,
             Key.animatedBackdrop: true,
+            Key.ditherDot: 2,
             Key.showsAgents: true,
         ])
         defaultMinutes = defaults.integer(forKey: Key.defaultMinutes)
@@ -77,6 +84,9 @@ final class AppSettings {
         showsAgents = defaults.bool(forKey: Key.showsAgents)
         backdrop = defaults.string(forKey: Key.backdrop) ?? Backdrop.scenes[0].id
         animatedBackdrop = defaults.bool(forKey: Key.animatedBackdrop)
+        backdropStyle = defaults.string(forKey: Key.backdropStyle).flatMap(BackdropStyle.init) ?? .dither
+        let dot = defaults.integer(forKey: Key.ditherDot)
+        ditherDot = Ditherer.dotChoices.contains(dot) ? dot : 2
         hiddenSkins = Set(defaults.stringArray(forKey: Key.hiddenSkins) ?? [])
     }
 

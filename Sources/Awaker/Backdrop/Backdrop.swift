@@ -13,6 +13,22 @@ struct BackdropScene: Identifiable, Equatable {
     var dim = 0.5
 }
 
+/// How the picture is redrawn over itself.
+enum BackdropStyle: String, CaseIterable, Identifiable {
+    /// Characters shaped like what they cover (`AsciiArtist`).
+    case ascii
+    /// Dots of a few colours, one per point (`Ditherer`).
+    case dither
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .ascii: "ASCII"
+        case .dither: "Dithered"
+        }
+    }
+}
+
 /// The pictures behind the whole window. The user picks one in Settings.
 @MainActor
 enum Backdrop {
@@ -80,6 +96,10 @@ enum Backdrop {
 
     /// Created once for the app's single window, not on every view update.
     static let artist = AsciiArtist()
+    static let ditherer = Ditherer()
+    /// Black laid over the dithered picture so the white text stays readable. Less than a scene's `dim`:
+    /// the dots are the picture here, not ink on top of it.
+    static let ditherDim = 0.35
 
     /// Blur of the still image behind the characters, in points. The video has a matching blur baked in
     /// (radius 2.5 in its own pixels, see `Assets/Backdrop/README.md`): blurring a playing layer live costs too much.
@@ -135,13 +155,25 @@ struct BackdropView: View {
                             // A new scene brings a new player: the layer must be rebuilt around it.
                             .id(ObjectIdentifier(video))
                     }
-                    Color.black.opacity(scene.dim)
-                    AsciiArtView(size: proxy.size, isPaused: !isAnimating) { video?.currentFrame() ?? image }
+                    switch settings.backdropStyle {
+                    case .ascii:
+                        Color.black.opacity(scene.dim)
+                        ArtView(size: proxy.size, isPaused: !isAnimating, frame: { video?.currentFrame() ?? image }) { frame, scale in
+                            Backdrop.artist.render(frame, size: proxy.size, scale: scale).map { ($0, scale) }
+                        }
                         .mask { WindowButtonsClearing() }
+                    case .dither:
+                        // Opaque: it replaces the picture rather than sitting on it.
+                        ArtView(size: proxy.size, isPaused: !isAnimating, frame: { video?.currentFrame() ?? image }) { frame, scale in
+                            Backdrop.ditherer.render(frame, size: proxy.size, scale: scale, dot: settings.ditherDot)
+                        }
+                        .mask { WindowButtonsClearing() }
+                        Color.black.opacity(Backdrop.ditherDim)
+                    }
                 }
                 // A different scene is a different picture and player: start the views afresh.
-                // The same goes for switching motion off, so the art is redrawn from the still picture.
-                .id("\(scene.id) \(isStill)")
+                // The same goes for switching motion off or changing style, so the art is redrawn.
+                .id("\(scene.id) \(isStill) \(settings.backdropStyle.rawValue) \(settings.ditherDot)")
             } else {
                 Color.black
             }
@@ -275,17 +307,19 @@ private struct VideoLoopView: NSViewRepresentable {
     }
 }
 
-/// The image redrawn as ASCII art (see `AsciiArtist`), rebuilt from the current frame a few times per second
-/// so it follows a video.
+/// The picture redrawn by an artist (`AsciiArtist` or `Ditherer`), rebuilt from the current frame a few times
+/// per second so it follows a video.
 ///
-/// The art is rendered to a bitmap with CoreText and shown as a plain image. Drawing the glyphs
+/// The art is rendered to a bitmap and shown as a plain image. Drawing the glyphs
 /// in a SwiftUI `Canvas` looked right in offscreen renders but never reached the screen.
-private struct AsciiArtView: View {
+private struct ArtView: View {
     let size: CGSize
     /// A still picture is drawn once; nothing is redrawn while paused.
     let isPaused: Bool
     /// The image currently shown behind the art.
     let frame: () -> CGImage?
+    /// The frame as art for a display scale, with the scale the bitmap was made at (pixels per point).
+    let render: (CGImage, CGFloat) -> (image: CGImage, scale: CGFloat)?
 
     @Environment(\.displayScale) private var displayScale
 
@@ -294,8 +328,9 @@ private struct AsciiArtView: View {
 
     var body: some View {
         TimelineView(SteadySchedule(interval: frameInterval, paused: isPaused)) { _ in
-            if let image = frame(), let art = Backdrop.artist.render(image, size: size, scale: displayScale) {
-                Image(decorative: art, scale: displayScale)
+            if let image = frame(), let art = render(image, displayScale) {
+                Image(decorative: art.image, scale: art.scale)
+                    .interpolation(.none)
                     .frame(width: size.width, height: size.height, alignment: .topLeading)
                     .clipped()
             }
