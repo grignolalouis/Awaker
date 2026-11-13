@@ -10,8 +10,8 @@ The user picks one in Settings. Each is a still and a loop made from it; the lis
 Where the pictures come from:
 
 - `backdrop` ("Meadow"): an illustration used with its author's permission (confirmed by the app's owner), rotated to landscape.
-- `beach`, `sunflowers`, `wheat`: original pictures generated with Higgsfield (GPT Image) from a text description, all with the same
+- `beach`, `sunflowers`, `wheat`, `clouds`: original pictures generated with Higgsfield (GPT Image) from a text description, all with the same
   style prompt ("hand-painted anime film background art, gouache and soft visible brushwork…") so they belong together.
-  The owner supplied three reference pictures for the subjects; they were not used as inputs, since their rights were unknown.
+  The owner supplied reference pictures for the subjects; they were not used as inputs, since their rights were unknown.
 
 Giving the video model the same image as start and end frame produces an almost static clip: use a start image only.
