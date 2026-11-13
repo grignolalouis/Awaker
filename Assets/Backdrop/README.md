@@ -13,5 +13,7 @@ Where the pictures come from:
 - `beach`, `sunflowers`, `wheat`, `clouds`, `forest`, `lagoon`, `desert`, `colossus`, `dusk`: original pictures generated with Higgsfield (GPT Image) from a text description, all with the same
   style prompt ("hand-painted anime film background art, gouache and soft visible brushwork…") so they belong together.
   The owner supplied reference pictures for the subjects; they were not used as inputs, since their rights were unknown.
+- `wonders`: generated the same way, but with the owner's reference picture as an input: the owner said it was itself AI-generated
+  (a website hero; its text and buttons were left out).
 
 Giving the video model the same image as start and end frame produces an almost static clip: use a start image only.
