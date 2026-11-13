@@ -73,7 +73,8 @@ struct SettingsView: View {
             }
 
             Section("Background") {
-                HStack(spacing: 10) {
+                // Four to a row: eight thumbnails side by side would be too small to tell apart.
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 12) {
                     ForEach(Backdrop.scenes) { scene in
                         let isOn = Backdrop.scene(settings.backdrop) == scene
                         Button {

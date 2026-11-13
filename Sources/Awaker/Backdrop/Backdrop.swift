@@ -22,6 +22,9 @@ enum Backdrop {
         BackdropScene(id: "sunflowers", title: "Sunflowers", dim: 0.58),
         BackdropScene(id: "wheat", title: "Wheat field", dim: 0.58),
         BackdropScene(id: "clouds", title: "Above the clouds", dim: 0.58),
+        BackdropScene(id: "forest", title: "Misty forest", dim: 0.58),
+        BackdropScene(id: "lagoon", title: "Lagoon", dim: 0.58),
+        BackdropScene(id: "desert", title: "Two moons", dim: 0.58),
     ]
 
     /// The scene with this id, or the first one when the id is unknown (a scene removed by an update).
